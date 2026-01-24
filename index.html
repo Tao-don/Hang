@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Shop Manager V10 - Cloud Sync</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-database-compat.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+        :root { --deep-teal: #034C5F; --light-teal: #97BEC6; --coral: #EE6457; --soft-pink: #F9C4BA; --bg-creamy: #FDF5F4; }
+        body { font-family: 'Inter', sans-serif; background-color: var(--bg-creamy); color: #1e293b; }
+        .form-input { width: 100%; padding: 10px 12px 10px 40px; border-radius: 12px; border: 1px solid var(--soft-pink); font-size: 14px; transition: 0.3s; background: white; }
+        .form-input:focus { border-color: var(--deep-teal); outline: none; box-shadow: 0 0 0 3px rgba(3, 76, 95, 0.1); }
+        .input-group { position: relative; }
+        .input-icon { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: var(--light-teal); font-size: 14px; }
+        .card { background: white; border-radius: 24px; border: 1px solid var(--soft-pink); }
+        .btn-sync { background: white; color: var(--deep-teal); padding: 8px 16px; border-radius: 12px; font-size: 12px; font-weight: 700; display: flex; align-items: center; gap: 8px; border: 1px solid var(--soft-pink); transition: 0.3s; }
+        .btn-sync:hover { background: var(--bg-creamy); }
+        .user-avatar { width: 32px; height: 32px; border-radius: 50%; border: 2px solid var(--light-teal); }
+        .crm-input { background: transparent; border: none; width: 100%; font-size: 13px; padding: 6px; border-radius: 6px; }
+        .crm-input:focus { background: white; box-shadow: 0 0 0 1px var(--light-teal); outline: none; }
+        #sync-status { font-size: 10px; color: #94a3b8; margin-top: 4px; text-align: right; }
+    </style>
+</head>
+<body class="pb-24">
+
+    <header class="bg-white/90 backdrop-blur-md border-b border-soft-pink sticky top-0 z-40">
+        <div class="container mx-auto px-4 h-16 flex justify-between items-center">
+            <div class="flex items-center gap-2">
+                <div class="w-10 h-10 bg-[#034C5F] rounded-xl flex items-center justify-center text-white shadow-md"><i class="fa-solid fa-cloud-arrow-up"></i></div>
+                <h1 class="hidden md:block font-extrabold text-[#034C5F] text-xl uppercase tracking-tighter">Sunset<span class="text-[#EE6457] font-light">Cloud</span></h1>
+            </div>
+
+            <div id="auth-section" class="flex items-center gap-3">
+                <button id="btn-login" onclick="loginGoogle()" class="btn-sync">
+                    <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/action/google.svg" width="18"> Đăng nhập đồng bộ
+                </button>
+                <div id="user-info" class="hidden flex items-center gap-3">
+                    <div class="text-right">
+                        <p id="user-name" class="text-[11px] font-bold text-[#034C5F] leading-none"></p>
+                        <p id="sync-status">Sẵn sàng</p>
+                    </div>
+                    <img id="user-photo" class="user-avatar" src="" alt="">
+                    <button onclick="logout()" class="text-[#EE6457] text-lg p-1"><i class="fa-solid fa-right-from-bracket"></i></button>
+                </div>
+            </div>
+
+            <nav class="flex bg-[#FDF5F4] p-1 rounded-2xl border border-[#F9C4BA]">
+                <button onclick="switchTab('orders')" id="tab-orders" class="px-3 py-2 rounded-xl text-xs font-bold transition-all bg-white text-[#034C5F] shadow-sm"><i class="fa-solid fa-cart-shopping"></i></button>
+                <button onclick="switchTab('analytics')" id="tab-analytics" class="px-3 py-2 rounded-xl text-xs font-medium text-[#034C5F] transition-all"><i class="fa-solid fa-chart-line"></i></button>
+                <button onclick="switchTab('customers')" id="tab-customers" class="px-3 py-2 rounded-xl text-xs font-medium text-[#034C5F] transition-all"><i class="fa-solid fa-users"></i></button>
+            </nav>
+        </div>
+    </header>
+
+    <main class="container mx-auto p-4 lg:max-w-7xl">
+        <div id="view-orders" class="space-y-6">
+            <section class="card p-6 border-t-[10px] border-[#034C5F]">
+                <form id="orderForm" onsubmit="event.preventDefault();" class="space-y-6">
+                    <input type="hidden" id="editOrderId" value="">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div class="space-y-4">
+                            <label class="text-xs font-bold text-[#034C5F] uppercase flex items-center gap-2"><i class="fa-solid fa-address-card"></i> Khách hàng</label>
+                            <div class="input-group"><i class="fa-solid fa-phone input-icon"></i><input type="text" id="custPhone" list="phoneDataList" onchange="autoFillByPhone()" class="form-input" placeholder="SĐT..."></div>
+                            <div class="input-group"><i class="fa-solid fa-user input-icon"></i><input type="text" id="custName" list="nameDataList" onchange="autoFillByName()" class="form-input" placeholder="Tên khách hàng"></div>
+                        </div>
+                        <div class="space-y-4">
+                            <label class="text-xs font-bold text-[#034C5F] uppercase flex items-center gap-2"><i class="fa-solid fa-map-location-dot"></i> Địa chỉ</label>
+                            <textarea id="custAddr" class="form-input h-[105px] resize-none py-3 !pl-10" placeholder="Địa chỉ giao hàng..."></textarea>
+                            <i class="fa-solid fa-house absolute left-[22px] top-[46px] text-[#97BEC6] text-sm"></i>
+                        </div>
+                    </div>
+                    <div id="product-list" class="space-y-3"></div>
+                    <button type="button" onclick="addProductRow()" class="w-full py-2 bg-[#FDF5F4] border-2 border-dashed border-[#F9C4BA] rounded-xl text-[#034C5F] text-xs font-bold">+ THÊM SẢN PHẨM</button>
+                    
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 pt-4 border-t border-[#F9C4BA]">
+                        <div><label class="text-[10px] font-bold text-[#97BEC6]">GỬI</label><input type="date" id="shipDate" onchange="autoSetDeliveryDate()" class="form-input !pl-3 mt-1"></div>
+                        <div><label class="text-[10px] font-bold text-[#97BEC6]">NHẬN</label><input type="date" id="deliveryDate" class="form-input !pl-3 mt-1"></div>
+                        <div><label class="text-[10px] font-bold text-[#97BEC6]">P/T THANH TOÁN</label><select id="payMethod" class="form-input !pl-3 mt-1"><option>COD (Shipper)</option><option>Chuyển khoản</option><option>Tiền mặt</option></select></div>
+                        <div><label class="text-[10px] font-bold text-[#97BEC6]">GHI CHÚ</label><input type="text" id="orderNote" class="form-input !pl-3 mt-1" placeholder="..."></div>
+                    </div>
+
+                    <div class="flex flex-col md:flex-row justify-between items-center bg-[#034C5F] text-white p-6 rounded-[28px] gap-4">
+                        <div class="flex gap-2">
+                            <div class="text-center"><label class="text-[10px]">Ship</label><input type="number" id="shipFee" oninput="calculateTotal()" class="form-input !pl-3 w-20 text-[#034C5F]" value="0"></div>
+                            <div class="text-center"><label class="text-[10px]">Giảm</label><div class="flex"><input type="number" id="discountVal" oninput="calculateTotal()" class="form-input !pl-3 rounded-r-none w-16 text-[#034C5F]" value="0"><select id="discountType" onchange="calculateTotal()" class="bg-white text-[#034C5F] rounded-r-xl text-[10px] px-1 font-bold"><option value="percent">%</option><option value="amount">₫</option></select></div></div>
+                        </div>
+                        <div class="text-center md:text-right flex-1">
+                            <span class="text-xs text-[#97BEC6] uppercase font-bold">TỔNG THU</span>
+                            <div class="text-4xl font-black" id="finalTotal">0 ₫</div>
+                        </div>
+                        <button onclick="saveOrder()" id="btnSave" class="w-full md:w-auto px-10 py-4 bg-[#EE6457] rounded-xl font-bold shadow-lg uppercase">Lưu đơn</button>
+                    </div>
+                </form>
+            </section>
+
+            <section class="card overflow-hidden">
+                <div class="p-4 bg-white flex justify-between items-center">
+                    <h3 class="font-bold text-[#034C5F] text-sm uppercase"><i class="fa-solid fa-list mr-2"></i>Lịch sử đơn</h3>
+                    <button onclick="exportOrdersToExcel()" class="bg-[#FDF5F4] text-[#EE6457] px-4 py-2 rounded-xl text-xs font-bold border border-[#F9C4BA]">XUẤT EXCEL</button>
+                </div>
+                <div class="overflow-x-auto"><table class="w-full text-left text-sm"><thead class="bg-[#FDF5F4] text-[10px] font-bold text-[#034C5F] uppercase"><tr><th class="p-4">Khách hàng</th><th class="p-4">Sản phẩm</th><th class="p-4 text-center">Trạng thái</th><th class="p-4 text-right">Tổng thu</th><th class="p-4 text-center">Tác vụ</th></tr></thead><tbody id="orderTableBody" class="divide-y divide-[#F9C4BA]/20"></tbody></table></div>
+            </section>
+        </div>
+
+        <div id="view-analytics" class="hidden space-y-6">
+             <div class="grid grid-cols-2 lg:grid-cols-4 gap-4" id="statCards"></div>
+             <div class="bg-white p-10 rounded-[40px] border-2 border-[#F9C4BA] text-center"><h2 class="text-6xl font-black text-[#034C5F]" id="totalPeriodRevenue">0 ₫</h2></div>
+        </div>
+
+        <div id="view-customers" class="hidden space-y-4">
+            <div class="card overflow-hidden">
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-sm min-w-[1000px]">
+                        <thead class="bg-[#FDF5F4] text-[10px] font-bold text-[#034C5F] uppercase">
+                            <tr><th class="p-4">Tên</th><th class="p-4">SĐT</th><th class="p-4">Địa chỉ</th><th class="p-4">Sinh nhật</th><th class="p-4">Công việc</th><th class="p-4">Ghi chú</th><th class="p-4 text-right">Tổng chi</th></tr>
+                        </thead>
+                        <tbody id="customerTableBody" class="divide-y divide-[#F9C4BA]/30"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <div id="invoiceModal" class="fixed inset-0 bg-[#034C5F]/80 hidden z-50 flex items-center justify-center p-4 backdrop-blur-md">
+        <div class="my-auto">
+            <div id="invoiceContent" class="bg-white rounded-[32px] overflow-hidden shadow-2xl" style="width: 450px;"></div>
+            <div class="mt-4 flex gap-3"><button onclick="closeModal()" class="flex-1 bg-white/20 py-3 rounded-xl text-white">Đóng</button><button onclick="downloadImage()" class="flex-1 bg-[#EE6457] py-3 rounded-xl text-white font-bold">Lưu ảnh</button></div>
+        </div>
+    </div>
+
+    <script>
+        // --- CẤU HÌNH FIREBASE (THAY THẾ BẰNG CONFIG CỦA BẠN) ---
+        const firebaseConfig = {
+  apiKey: "AIzaSyA2Rd1Kt3KhITxZJqCiQB6crH76Hzs-E0g",
+  authDomain: "sunet-shop-manager.firebaseapp.com",
+  databaseURL: "https://sunet-shop-manager-default-rtdb.firebaseio.com",
+  projectId: "sunet-shop-manager",
+  storageBucket: "sunet-shop-manager.firebasestorage.app",
+  messagingSenderId: "747971693974",
+  appId: "1:747971693974:web:3c254a92f455f9bb8261b7",
+  measurementId: "G-S8BR0F5LGT"
+};
+        firebase.initializeApp(firebaseConfig);
+        const auth = firebase.auth();
+        const db = firebase.database();
+        const provider = new firebase.auth.GoogleAuthProvider();
+
+        // --- GLOBAL STATE ---
+        let orders = [];
+        let customers = {};
+        let currentUser = null;
+        const OUT_KEYWORDS = ['BND', 'NƯỚC HOA', 'SERUM'];
+        const formatMoney = (n) => new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(n);
+
+        // --- AUTH & SYNC LOGIC ---
+        auth.onAuthStateChanged(user => {
+            if (user) {
+                currentUser = user;
+                document.getElementById('btn-login').classList.add('hidden');
+                document.getElementById('user-info').classList.remove('hidden');
+                document.getElementById('user-name').innerText = user.displayName;
+                document.getElementById('user-photo').src = user.photoURL;
+                loadFromCloud();
+            } else {
+                currentUser = null;
+                document.getElementById('btn-login').classList.remove('hidden');
+                document.getElementById('user-info').classList.add('hidden');
+                // Nếu không login thì dùng LocalStorage
+                orders = JSON.parse(localStorage.getItem('v10_orders')) || [];
+                customers = JSON.parse(localStorage.getItem('v10_customers')) || {};
+                renderAll();
+            }
+        });
+
+        function loginGoogle() { auth.signInWithPopup(provider); }
+        function logout() { auth.signOut().then(() => location.reload()); }
+
+        function saveToCloud() {
+            if (!currentUser) {
+                localStorage.setItem('v10_orders', JSON.stringify(orders));
+                localStorage.setItem('v10_customers', JSON.stringify(customers));
+                return;
+            }
+            document.getElementById('sync-status').innerText = "Đang đồng bộ...";
+            db.ref('users/' + currentUser.uid).set({ orders, customers })
+              .then(() => document.getElementById('sync-status').innerText = "Đã lưu Cloud " + new Date().toLocaleTimeString());
+        }
+
+        function loadFromCloud() {
+            db.ref('users/' + currentUser.uid).once('value', snapshot => {
+                const data = snapshot.val();
+                if (data) {
+                    orders = data.orders || [];
+                    customers = data.customers || {};
+                    renderAll();
+                }
+            });
+        }
+
+        // --- CORE UI LOGIC (Updated to call saveToCloud) ---
+        function saveOrder() {
+            const phone = document.getElementById('custPhone').value;
+            const name = document.getElementById('custName').value;
+            if(!phone || !name) return alert("Thiếu tên hoặc SĐT!");
+
+            let products = [];
+            document.querySelectorAll('.p-name').forEach((el, idx) => {
+                products.push({ name: el.value, price: parseFloat(document.querySelectorAll('.p-price')[idx].value) || 0, qty: parseInt(document.querySelectorAll('.p-qty')[idx].value) || 1 });
+            });
+
+            if(!customers[phone]) customers[phone] = { name, address: document.getElementById('custAddr').value, birthday: '', job: '', note: '' };
+            else { customers[phone].name = name; customers[phone].address = document.getElementById('custAddr').value; }
+
+            const { subtotal, total } = calculateTotal();
+            const id = document.getElementById('editOrderId').value;
+            const order = { id: id ? parseInt(id) : Date.now(), timestamp: id ? orders.find(x=>x.id==id).timestamp : Date.now(), customer: { name, phone, addr: document.getElementById('custAddr').value }, products, payMethod: document.getElementById('payMethod').value, shipFee: parseFloat(document.getElementById('shipFee').value) || 0, discount: { val: parseFloat(document.getElementById('discountVal').value)||0, type: document.getElementById('discountType').value }, date: document.getElementById('shipDate').value, deliveryDate: document.getElementById('deliveryDate').value, note: document.getElementById('orderNote').value.trim(), subtotal, total, status: id ? orders.find(x => x.id == id).status : "Đợi gửi" };
+            
+            if(id) orders[orders.findIndex(o => o.id == id)] = order; else orders.unshift(order);
+            saveToCloud(); renderTable(); resetForm(); updateDatalists();
+        }
+
+        // --- RENDER HELPERS ---
+        function renderAll() { renderTable(); renderAnalytics(); renderCustomerCRM(); updateDatalists(); }
+
+        function renderTable() {
+            const STATUS_COLORS = { "Đợi gửi": "bg-slate-100 text-slate-600", "Đang giao": "bg-blue-100 text-blue-700", "HD Sử dụng": "bg-indigo-100 text-indigo-700", "Chăm sóc": "bg-emerald-100 text-emerald-700", "Xử lý": "bg-amber-100 text-amber-700", "Đã Hủy": "bg-red-100 text-red-700" };
+            document.getElementById('orderTableBody').innerHTML = orders.map(o => `
+                <tr class="hover:bg-white transition-colors">
+                    <td class="p-4"><b>${o.customer.name}</b><br><span class="text-xs text-[#97BEC6]">${o.customer.phone}</span></td>
+                    <td class="p-4 text-xs text-slate-500">${o.products.map(p => p.name).join(', ')}</td>
+                    <td class="p-4 text-center"><button onclick="updateStatus(${o.id})" class="px-3 py-1 rounded-lg text-[10px] font-bold ${STATUS_COLORS[o.status]}">${o.status}</button></td>
+                    <td class="p-4 text-right font-bold text-[#EE6457]">${formatMoney(o.total)}</td>
+                    <td class="p-4 text-center flex justify-center gap-2">
+                        <button onclick="openInvoice(${o.id})" class="text-[#97BEC6]"><i class="fa-solid fa-receipt"></i></button>
+                        <button onclick="editOrder(${o.id})" class="text-[#97BEC6]"><i class="fa-solid fa-edit"></i></button>
+                        <button onclick="deleteOrder(${o.id})" class="text-slate-200"><i class="fa-solid fa-trash"></i></button>
+                    </td>
+                </tr>`).join('');
+        }
+
+        function renderCustomerCRM() {
+            const tbody = document.getElementById('customerTableBody');
+            const spendings = {}; orders.forEach(o => spendings[o.customer.phone] = (spendings[o.customer.phone] || 0) + o.total);
+            tbody.innerHTML = Object.keys(customers).map(phone => {
+                const c = customers[phone];
+                return `<tr class="hover:bg-white">
+                    <td class="p-3"><input type="text" value="${c.name}" onchange="updateCust('${phone}','name',this.value)" class="crm-input font-bold"></td>
+                    <td class="p-3"><input type="text" value="${phone}" onchange="updatePhone('${phone}',this.value)" class="crm-input font-mono text-[#EE6457]"></td>
+                    <td class="p-3"><input type="text" value="${c.address||''}" onchange="updateCust('${phone}','address',this.value)" class="crm-input" placeholder="..."></td>
+                    <td class="p-3"><input type="date" value="${c.birthday||''}" onchange="updateCust('${phone}','birthday',this.value)" class="crm-input text-xs"></td>
+                    <td class="p-3"><input type="text" value="${c.job||''}" onchange="updateCust('${phone}','job',this.value)" class="crm-input"></td>
+                    <td class="p-3"><input type="text" value="${c.note||''}" onchange="updateCust('${phone}','note',this.value)" class="crm-input italic"></td>
+                    <td class="p-3 text-right font-black">${formatMoney(spendings[phone]||0)}</td></tr>`;
+            }).join('');
+        }
+
+        // Cập nhật trường thông tin và sync
+        function updateCust(p, f, v) { customers[p][f] = v; saveToCloud(); }
+        function updatePhone(oldP, newP) {
+            if(customers[newP]) return alert("SĐT đã tồn tại!");
+            customers[newP] = {...customers[oldP]}; delete customers[oldP];
+            orders.forEach(o => { if(o.customer.phone === oldP) o.customer.phone = newP; });
+            saveToCloud(); renderAll();
+        }
+
+        // --- CÁC HÀM TIỆN ÍCH KHÁC (GIỮ NGUYÊN TỪ BẢN 9.2) ---
+        function addProductRow(name = "", price = "", qty = 1) {
+            const container = document.getElementById('product-list');
+            const div = document.createElement('div');
+            div.className = "grid grid-cols-[2fr,1fr,0.5fr,auto] gap-2 bg-white p-3 border border-soft-pink rounded-xl items-center shadow-sm";
+            div.innerHTML = `<div class="input-group"><i class="fa-solid fa-cube input-icon"></i><input type="text" class="form-input p-name" placeholder="Tên SP..." value="${name}" required></div><div class="input-group"><i class="fa-solid fa-money-bill-1-wave input-icon"></i><input type="number" class="form-input p-price font-bold text-[#034C5F]" value="${price}" oninput="calculateTotal()" required></div><input type="number" class="form-input !pl-3 p-qty text-center" value="${qty}" oninput="calculateTotal()" required><button type="button" onclick="this.parentElement.remove(); calculateTotal()" class="text-[#F9C4BA]"><i class="fa-solid fa-circle-xmark"></i></button>`;
+            container.appendChild(div);
+            calculateTotal();
+        }
+        function calculateTotal() {
+            let subtotal = 0;
+            document.querySelectorAll('.p-name').forEach((el, i) => { subtotal += (parseFloat(document.querySelectorAll('.p-price')[i].value)||0) * (parseFloat(document.querySelectorAll('.p-qty')[i].value)||0); });
+            const ship = parseFloat(document.getElementById('shipFee').value) || 0;
+            const dVal = parseFloat(document.getElementById('discountVal').value) || 0;
+            const dType = document.getElementById('discountType').value;
+            let disc = dType === 'percent' ? subtotal * (dVal/100) : dVal;
+            let total = Math.max(0, subtotal - disc + ship);
+            document.getElementById('finalTotal').innerText = formatMoney(total);
+            return { subtotal, total };
+        }
+        function switchTab(t) {
+            ['view-orders', 'view-analytics', 'view-customers'].forEach(v => document.getElementById(v).classList.add('hidden'));
+            document.getElementById(`view-${t}`).classList.remove('hidden');
+            if(t === 'analytics') renderAnalytics();
+            if(t === 'customers') renderCustomerCRM();
+        }
+        function autoSetDeliveryDate() { const shipDateVal = document.getElementById('shipDate').value; if (shipDateVal) { const date = new Date(shipDateVal); date.setDate(date.getDate() + 3); document.getElementById('deliveryDate').value = date.toISOString().split('T')[0]; } }
+        function resetForm() { document.getElementById('orderForm').reset(); document.getElementById('product-list').innerHTML = ""; addProductRow(); document.getElementById('shipDate').valueAsDate = new Date(); autoSetDeliveryDate(); calculateTotal(); }
+        function updateDatalists() {
+            document.getElementById('phoneDataList').innerHTML = Object.keys(customers).map(p => `<option value="${p}">${customers[p].name}</option>`).join('');
+            document.getElementById('nameDataList').innerHTML = Object.keys(customers).map(p => `<option value="${customers[p].name}">${p}</option>`).join('');
+        }
+        function autoFillByPhone() { const p = document.getElementById('custPhone').value; if(customers[p]) { document.getElementById('custName').value = customers[p].name; document.getElementById('custAddr').value = customers[p].address; } }
+        function autoFillByName() { const n = document.getElementById('custName').value; const p = Object.keys(customers).find(k => customers[k].name === n); if(p) { document.getElementById('custPhone').value = p; document.getElementById('custAddr').value = customers[p].address; } }
+        function updateStatus(id) { const o = orders.find(x => x.id === id); const opts = ["Đợi gửi", "Đang giao", "HD Sử dụng", "Chăm sóc", "Xử lý", "Đã Hủy"]; o.status = opts[(opts.indexOf(o.status) + 1) % opts.length]; saveToCloud(); renderTable(); }
+        function deleteOrder(id) { if(confirm("Xoá đơn?")) { orders = orders.filter(o => o.id !== id); saveToCloud(); renderTable(); } }
+        
+        // Render báo cáo VN Ngoài, VNL, Mới, TTD
+        function renderAnalytics() {
+            let sOut = 0, sVnl = 0, sNew = 0, sTtd = 0;
+            orders.filter(o => o.status !== "Đã Hủy").forEach(o => {
+                const net = o.total - o.shipFee;
+                o.products.forEach(p => {
+                    const ratio = o.subtotal > 0 ? (p.price * p.qty / o.subtotal) : 0;
+                    if(OUT_KEYWORDS.some(k => p.name.toUpperCase().includes(k))) sOut += ratio * net; else sVnl += ratio * net;
+                });
+                const isNew = orders.filter(prev => prev.customer.phone === o.customer.phone && prev.timestamp < o.timestamp).length === 0;
+                if(isNew) sNew += net; else sTtd += net;
+            });
+            document.getElementById('statCards').innerHTML = `
+                <div class="card p-4 border-l-4 border-[#034C5F]"><p class="text-[10px] font-bold">NGOÀI</p><h3 class="text-lg font-black">${formatMoney(sOut)}</h3></div>
+                <div class="card p-4 border-l-4 border-[#034C5F]"><p class="text-[10px] font-bold">VNL</p><h3 class="text-lg font-black">${formatMoney(sVnl)}</h3></div>
+                <div class="card p-4 border-l-4 border-[#EE6457]"><p class="text-[10px] font-bold">MỚI</p><h3 class="text-lg font-black">${formatMoney(sNew)}</h3></div>
+                <div class="card p-4 border-l-4 border-[#EE6457]"><p class="text-[10px] font-bold">TTD</p><h3 class="text-lg font-black">${formatMoney(sTtd)}</h3></div>`;
+            document.getElementById('totalPeriodRevenue').innerText = formatMoney(sOut + sVnl);
+        }
+
+        // Khởi tạo
+        document.getElementById('shipDate').valueAsDate = new Date();
+        addProductRow(); 
+    </script>
+</body>
+</html>
