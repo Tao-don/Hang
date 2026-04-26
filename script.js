@@ -100,6 +100,22 @@ function getLocalDateString() {
     return `${yyyy}-${mm}-${dd}`;
 }
 
+// Thêm hàm chuyển đổi ngày sang số để so sánh chính xác tuyệt đối
+function dateToNumber(dateStr) {
+    if (!dateStr) return 0;
+    let y = 0, m = 0, d = 0;
+    if (dateStr.includes('-')) {
+        const parts = dateStr.split('-');
+        if (parts[0].length === 4) { y = parseInt(parts[0]); m = parseInt(parts[1]); d = parseInt(parts[2]); }
+        else { d = parseInt(parts[0]); m = parseInt(parts[1]); y = parseInt(parts[2]); }
+    } else if (dateStr.includes('/')) {
+        const parts = dateStr.split('/');
+        if (parts[2].length === 4) { d = parseInt(parts[0]); m = parseInt(parts[1]); y = parseInt(parts[2]); }
+        else { y = parseInt(parts[0]); m = parseInt(parts[1]); d = parseInt(parts[2]); }
+    }
+    return y * 10000 + m * 100 + d;
+}
+
 // ==========================================
 // HỆ THỐNG CUSTOM MODAL
 // ==========================================
@@ -257,9 +273,10 @@ function refreshAllViews() {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-    initDataSync();
-    
+    // 1. GÁN GIÁ TRỊ MẶC ĐỊNH TRƯỚC KHI GỌI RENDER DỮ LIỆU
     const todayStr = getLocalDateString();
+    
+    // - Thiết lập ngày cho các form nhập liệu
     if (document.getElementById('orderDate')) document.getElementById('orderDate').value = todayStr;
     if (document.getElementById('shipDate')) document.getElementById('shipDate').value = todayStr; 
     if (document.getElementById('cvAccDate')) document.getElementById('cvAccDate').value = todayStr;
@@ -268,26 +285,27 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentMonthStr = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, '0');
     if (document.getElementById('cvMonthPick')) document.getElementById('cvMonthPick').value = currentMonthStr;
 
+    // - Thiết lập ngày mặc định (Mùng 1 đến Hiện tại) cho bộ lọc Danh sách
+    const listFilterStart = document.getElementById('listFilterStart');
+    const listFilterEnd = document.getElementById('listFilterEnd');
+    if (listFilterStart && listFilterEnd) {
+        const firstDayStr = todayStr.substring(0, 8) + '01'; 
+        listFilterStart.value = firstDayStr;
+        listFilterEnd.value = todayStr;
+    }
+
+    // 2. KHỞI TẠO VÀ ĐỒNG BỘ DỮ LIỆU 
+    // (Lúc này bộ lọc đã có sẵn dữ liệu ngày để hàm renderTable đọc và hiển thị chính xác ngay lập tức)
+    initDataSync();
+
+    // 3. Khởi tạo các thành phần UI khác
     if (typeof autoSetDeliveryDate === 'function') autoSetDeliveryDate(); 
     setupCustomAutocomplete();
 
     const productList = document.getElementById('product-list');
     if (productList && productList.children.length === 0) addProductRow();
-    
-const listFilterStart = document.getElementById('listFilterStart');
-const listFilterEnd = document.getElementById('listFilterEnd');
-if (listFilterStart && listFilterEnd) {
-    // Lấy ngày hôm nay chuẩn GMT+7 theo hàm đã có
-    const todayStr = getLocalDateString(); 
-    
-    // Lấy ngày mùng 1 của tháng hiện tại bằng cách thay thế 2 ký tự cuối của chuỗi ngày thành '01'
-    const firstDayStr = todayStr.substring(0, 8) + '01'; 
-    
-    listFilterStart.value = firstDayStr;
-    listFilterEnd.value = todayStr;
-}
-
 });
+
 
 // ==========================================
 // CÁC HÀM BACKUP & RESTORE
@@ -300,37 +318,60 @@ function backupData() {
     showToast("Đã tải xuống file sao lưu!");
 }
 
+// ==========================================
+// KHÔI PHỤC DỮ LIỆU & ÉP ĐỒNG BỘ FIREBASE
+// ==========================================
 function restoreData(input) {
     const file = input.files[0];
     if (!file) return;
 
-    showCustomConfirm("CẢNH BÁO: Dữ liệu hiện tại sẽ bị ghi đè. Hãy chắc chắn bạn đã sao lưu trước đó!", () => {
+    showCustomConfirm("CẢNH BÁO: Toàn bộ dữ liệu trên hệ thống sẽ bị GHI ĐÈ bằng file này. Bạn có chắc chắn muốn tiếp tục?", () => {
+        
+        // 1. Hiển thị trạng thái đang xử lý để user không thao tác lung tung
+        showToast("Đang đọc file và đồng bộ lên Firebase... Vui lòng đợi!");
+        
         const reader = new FileReader();
         reader.onload = function(e) {
             try {
                 const data = JSON.parse(e.target.result);
-                if (data.orders && data.customers) {
+                
+                // 2. Kiểm tra tính toàn vẹn của file (Strict Validation)
+                if (data.orders && Array.isArray(data.orders) && data.customers && typeof data.customers === 'object') {
+                    
+                    // Khóa listener của Firebase để tránh UI bị giật/render lại 2 lần
+                    isLocalAction = true;
+                    
+                    // Gán dữ liệu vào biến Local
                     orders = data.orders;
                     customers = data.customers;
                     inventory = data.inventory || [];
                     cvAccumulations = data.cvAccumulations || [];
                     cvMonthlyStats = data.cvMonthlyStats || {};
                     
+                    // 3. Ép đồng bộ thẳng lên Firebase bằng syncData()
                     syncData().then(() => {
                         refreshAllViews();
-                        showCustomAlert("Khôi phục thành công!", "success"); 
+                        isLocalAction = false; // Mở lại listener
+                        showCustomAlert("Đã khôi phục và lưu dữ liệu lên Firebase thành công!", "success"); 
+                    }).catch(err => {
+                        isLocalAction = false;
+                        showCustomAlert("Có lỗi khi đẩy lên Firebase: " + err.message, "error");
                     });
+
                 } else {
-                    showCustomAlert("File không hợp lệ hoặc cấu trúc lỗi.", "error");
+                    showCustomAlert("File không hợp lệ hoặc không phải file Backup của BNDShop.", "error");
                 }
             } catch (err) { 
-                showCustomAlert("Lỗi đọc file: " + err.message, "error"); 
+                showCustomAlert("File bị lỗi định dạng (Corrupted JSON): " + err.message, "error"); 
             }
         };
         reader.readAsText(file);
     });
+    
+    // Reset input để có thể chọn lại cùng 1 file nếu cần
     input.value = ''; 
 }
+
 
 // ==========================================
 // QUẢN LÝ KHO
@@ -521,39 +562,52 @@ function saveOrder() {
 }
 
 function renderTable() {
-    const fStart = document.getElementById('listFilterStart').value;
-    const fEnd = document.getElementById('listFilterEnd').value;
-    const fType = document.getElementById('listFilterType').value;
-    // Sử dụng thuật toán loại bỏ dấu để tìm kiếm thông minh
-    const searchInputVal = document.getElementById('searchOrderInput').value;
-const search = removeAccents(searchInputVal.trim());
-const searchTerms = search ? search.split(' ') : [];
-
-let filtered = orders.filter(o => {
-    const targetDate = o.orderDate || o.date;
-    const isSearching = searchTerms.length > 0;
-
-    const dateMatch = (!fStart || targetDate >= fStart) && (!fEnd || targetDate <= fEnd);
-    const typeMatch = (fType === 'all' || o.customer.type === fType);
-
-    let searchMatch = true;
-    if (isSearching) {
-        const customerName = o.customer.name ? removeAccents(o.customer.name) : '';
-        // Yêu cầu TẤT CẢ các từ khóa phải xuất hiện trong tên HOẶC số điện thoại
-        searchMatch = searchTerms.every(term => 
-            o.customer.phone.includes(term) || customerName.includes(term)
-        );
+    const startInput = document.getElementById('listFilterStart');
+    const endInput = document.getElementById('listFilterEnd');
+    
+    // Đảm bảo luôn lấy mặc định Mùng 1 đến Hiện tại (chuẩn giờ VN) nếu chưa có giá trị
+    if (!startInput.value && !endInput.value) {
+        const todayStr = getLocalDateString();
+        startInput.value = todayStr.substring(0, 8) + '01'; // Luôn là mùng 1 của tháng hiện tại
+        endInput.value = todayStr; // Ngày hiện tại
     }
 
-    // Nếu đang gõ tìm kiếm, ưu tiên hiển thị toàn bộ kết quả khớp (bỏ qua lọc ngày)
-    if (isSearching) return searchMatch; 
+    const fStart = startInput.value;
+    const fEnd = endInput.value;
+    const fType = document.getElementById('listFilterType').value;
     
-    return dateMatch && typeMatch;
-});
+    const searchInputVal = document.getElementById('searchOrderInput').value;
+    const search = removeAccents(searchInputVal.trim());
+    const searchTerms = search ? search.split(' ') : [];
 
+    // Chuyển đổi bộ lọc ngày sang số để so sánh
+    const startNum = fStart ? dateToNumber(fStart) : 0;
+    const endNum = fEnd ? dateToNumber(fEnd) : 99999999;
 
+    let filtered = orders.filter(o => {
+        const targetDate = o.orderDate || o.date;
+        const targetNum = targetDate ? dateToNumber(targetDate) : 0; // Chuyển ngày của đơn hàng sang số
+        
+        const isSearching = searchTerms.length > 0;
 
-    
+        // So sánh bằng số (Number) thay vì chuỗi (String) - Khắc phục triệt để lỗi ẩn đơn
+        const dateMatch = (!fStart || targetNum >= startNum) && (!fEnd || targetNum <= endNum);
+        const typeMatch = (fType === 'all' || o.customer.type === fType);
+
+        let searchMatch = true;
+        if (isSearching) {
+            const customerName = o.customer.name ? removeAccents(o.customer.name) : '';
+            searchMatch = searchTerms.every(term => 
+                o.customer.phone.includes(term) || customerName.includes(term)
+            );
+        }
+
+        // Ưu tiên hiển thị kết quả tìm kiếm nếu đang gõ
+        if (isSearching) return searchMatch; 
+        
+        return dateMatch && typeMatch;
+    });
+
     // Đảm bảo đơn mới nhất luôn ở trên
     filtered.sort((a, b) => b.timestamp - a.timestamp);
 
@@ -1044,7 +1098,12 @@ function downloadImage() {
 function switchTab(t) { ['view-orders', 'view-analytics', 'view-customers', 'view-inventory', 'view-cv'].forEach(v => document.getElementById(v).classList.add('hidden')); document.getElementById(`view-${t}`).classList.remove('hidden'); document.querySelectorAll('nav button').forEach(btn => btn.className = "px-3 md:px-4 py-2 rounded-xl text-sm font-medium text-[#034C5F] transition-all bg-transparent"); document.getElementById(`tab-${t}`).className = "px-3 md:px-4 py-2 rounded-xl text-sm font-bold bg-white text-[#034C5F] shadow-sm"; if(t === 'analytics') renderAnalytics(); if(t === 'inventory') renderInventory(); if(t === 'customers') renderCustomerCRM(); if(t === 'cv') { initCVSummaryFilters(); renderAllCV(); } }
 function toggleSettingsMenu() { const menu = document.getElementById('settingsMenu'); menu.classList.toggle('hidden'); document.getElementById('notificationMenu').classList.add('hidden'); const closeMenu = (e) => { if (!document.getElementById('settingsMenuContainer').contains(e.target)) { menu.classList.add('hidden'); document.removeEventListener('click', closeMenu); } }; if (!menu.classList.contains('hidden')) { setTimeout(() => document.addEventListener('click', closeMenu), 10); } else { document.removeEventListener('click', closeMenu); } }
 function toggleNotificationMenu() { const menu = document.getElementById('notificationMenu'); menu.classList.toggle('hidden'); document.getElementById('settingsMenu').classList.add('hidden'); const closeMenu = (e) => { if (!document.getElementById('notificationMenuContainer').contains(e.target)) { menu.classList.add('hidden'); document.removeEventListener('click', closeMenu); } }; if (!menu.classList.contains('hidden')) { setTimeout(() => document.addEventListener('click', closeMenu), 10); } else { document.removeEventListener('click', closeMenu); } }
-function resetOrderFilters() { document.getElementById('listFilterStart').value = ''; document.getElementById('listFilterEnd').value = ''; document.getElementById('listFilterType').value = 'all'; renderTable(); }
+function resetOrderFilters() { 
+    document.getElementById('listFilterStart').value = ''; 
+    document.getElementById('listFilterEnd').value = ''; 
+    document.getElementById('listFilterType').value = 'all'; 
+    renderTable(); 
+}
 function openExportModal() { document.getElementById('exportModal').classList.remove('hidden'); const today = new Date(); document.getElementById('exportStartDate').value = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().split('T')[0]; document.getElementById('exportEndDate').value = getLocalDateString(); document.getElementById('exportFileName').value = `Don_Hang_Thang_${today.getMonth()+1}`; }
 function closeExportModal() { document.getElementById('exportModal').classList.add('hidden'); }
 
@@ -1514,6 +1573,7 @@ async function saveUserProfile() {
         const name = document.getElementById('profileName').value.trim();
         const phone = document.getElementById('profilePhone').value.trim();
         const dob = document.getElementById('profileDOB').value;
+        const joinDate = document.getElementById('profileJoinDate').value; // Bổ sung lấy ngày tham gia
         let photoURL = currentUser.photoURL;
 
         // Xử lý upload ảnh nếu có đổi
@@ -1526,17 +1586,23 @@ async function saveUserProfile() {
         // Cập nhật Firebase Auth (Tên & Ảnh)
         await updateProfile(currentUser, { displayName: name, photoURL: photoURL });
 
-        // Cập nhật Firebase Realtime DB (Phone, DOB)
+        // Cập nhật Firebase Realtime DB (Phone, DOB, JoinDate)
         await update(ref(db, `SunsetShopData/Users/${currentUser.uid}`), {
-            name: name, phone: phone, dob: dob, photoURL: photoURL
+            name: name, 
+            phone: phone, 
+            dob: dob, 
+            joinDate: joinDate, // Gửi dữ liệu ngày tham gia lên Firebase
+            photoURL: photoURL
         });
 
         showToast("Đã cập nhật hồ sơ thành công!");
         closeProfileModal();
     } catch (error) {
+        console.error("Lỗi khi lưu profile:", error);
         showCustomAlert("Lỗi cập nhật: " + error.message, "error");
     } finally {
-        btnSave.innerHTML = '<i class="fa-solid fa-floppy-disk mr-2"></i>CẬP NHẬT HỒ SƠ';
+        // Phục hồi lại nút ban đầu, chống kẹt spinner
+        btnSave.innerHTML = '<i class="fa-solid fa-floppy-disk text-lg mr-2"></i> LƯU THAY ĐỔI';
         btnSave.disabled = false;
     }
 }
