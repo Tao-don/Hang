@@ -1048,9 +1048,113 @@ function resetOrderFilters() { document.getElementById('listFilterStart').value 
 function openExportModal() { document.getElementById('exportModal').classList.remove('hidden'); const today = new Date(); document.getElementById('exportStartDate').value = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().split('T')[0]; document.getElementById('exportEndDate').value = getLocalDateString(); document.getElementById('exportFileName').value = `Don_Hang_Thang_${today.getMonth()+1}`; }
 function closeExportModal() { document.getElementById('exportModal').classList.add('hidden'); }
 
-function confirmExport() { const fileName = document.getElementById('exportFileName').value.trim() || `Export_${Date.now()}`; const s = document.getElementById('exportStartDate').value; const e = document.getElementById('exportEndDate').value; const data = orders.filter(o => { const targetDate = o.orderDate || o.date; return (!s || targetDate >= s) && (!e || targetDate <= e) }); let csv = "\ufeffMã Đơn,Ngày Đặt,Ngày Gửi,Ngày Giao,Tên,SĐT,Sản Phẩm,Tổng Tiền\n"; data.forEach(o => csv += `${o.id},${o.orderDate || o.date},${o.date},"${o.customer.name}","${o.customer.phone}","${o.products.map(p=>p.name).join('|')}",${o.total}\n`); const link = document.createElement("a"); link.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' })); link.download = `${fileName}.csv`; link.click(); closeExportModal(); }
+function confirmExport() {
+    const fileNameInput = document.getElementById('exportFileName').value.trim();
+    const fileName = fileNameInput || `BaoCaoDonHang_${new Date().toISOString().slice(0, 10)}`;
+    
+    const s = document.getElementById('exportStartDate').value;
+    const e = document.getElementById('exportEndDate').value;
 
-function exportCustomersToExcel() { let csv = "\ufeffTên,SĐT,Địa Chỉ,Sinh Nhật,Ngày Kỉ Niệm,Công Việc,Tình Trạng,Ghi Chú,Tổng Chi\n"; Object.keys(customers).forEach(p => { const c = customers[p]; const totalSpend = orders.filter(o=>o.customer.phone==p).reduce((a,b)=>a+b.total,0); csv += `"${c.name}","${p}","${c.address || ''}","${c.birthday || ''}","${c.anniversary || ''}","${c.job || ''}","${c.status || ''}","${c.note || ''}","${totalSpend}"\n`; }); const link = document.createElement("a"); link.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' })); link.download = "KhachHang.csv"; link.click(); }
+    // Lọc dữ liệu theo ngày
+    const data = orders.filter(o => {
+        const targetDate = o.orderDate || o.date;
+        return (!s || targetDate >= s) && (!e || targetDate <= e);
+    });
+
+    // 1. Header với BOM để tránh lỗi font tiếng Việt trên Excel
+    let csv = "\ufeffMã Đơn,Ngày Đặt,Ngày Gửi,Ngày Giao,Tên Khách,SĐT,Sản Phẩm,Tổng Tiền\n";
+
+    // 2. Hàm xử lý chuỗi an toàn
+    const escapeCSV = (text) => {
+        if (!text) return "";
+        // Thay thế dấu " thành "" và bọc toàn bộ nội dung trong cặp dấu ""
+        return `"${String(text).replace(/"/g, '""')}"`;
+    };
+
+    // 3. Duyệt dữ liệu
+    data.forEach(o => {
+        const productNames = o.products ? o.products.map(p => p.name).join(' | ') : "";
+        
+        const row = [
+            o.id,
+            o.orderDate || o.date || '',
+            o.shipDate || '', // Giả định bạn có shipDate hoặc dùng date gửi
+            o.deliveryDate || '',
+            escapeCSV(o.customer?.name),
+            escapeCSV(o.customer?.phone),
+            escapeCSV(productNames),
+            o.total || 0
+        ];
+
+        csv += row.join(",") + "\n";
+    });
+
+    // 4. Tạo và tải file
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    
+    link.href = url;
+    link.download = `${fileName}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    
+    // Dọn dẹp
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    closeExportModal();
+}
+
+function exportCustomersToExcel() {
+    // 1. Khởi tạo Header với BOM để Excel nhận diện được tiếng Việt (UTF-8)
+    let csv = "\ufeffTên Khách Hàng,Số Điện Thoại,Địa Chỉ,Sinh Nhật,Ngày Kỉ Niệm,Công Việc,Tình Trạng,Ghi Chú,Tổng Chi Tiêu\n";
+
+    // 2. Hàm bổ trợ để làm sạch dữ liệu trước khi đưa vào CSV
+    const escapeCSV = (text) => {
+        if (text === null || text === undefined) return "";
+        // Chuyển về chuỗi, thay thế dấu " thành "" (quy tắc của CSV) 
+        // và loại bỏ các dấu xuống dòng để không làm nát hàng trong Excel
+        return String(text).replace(/"/g, '""').replace(/\n|\r/g, ' ');
+    };
+
+    // 3. Duyệt danh sách khách hàng
+    Object.keys(customers).forEach(phone => {
+        const c = customers[phone];
+        
+        // Tính tổng chi tiêu của khách này từ mảng orders
+        const totalSpend = orders
+            .filter(o => o.customer && o.customer.phone === phone)
+            .reduce((a, b) => a + (Number(b.total) || 0), 0);
+
+        // Chuẩn bị các trường dữ liệu đã được "làm sạch"
+        const row = [
+            escapeCSV(c.name),
+            escapeCSV(phone),
+            escapeCSV(c.address),
+            escapeCSV(c.birthday),
+            escapeCSV(c.anniversary),
+            escapeCSV(c.job),
+            escapeCSV(c.status),
+            escapeCSV(c.note),
+            totalSpend // Số điện thoại và số tiền không cần escape nếu là số thuần
+        ];
+
+        // Nối vào chuỗi CSV, bọc mỗi trường trong dấu ngoặc kép và cách nhau bằng dấu phẩy
+        csv += `"${row.join('","')}"\n`;
+    });
+
+    // 4. Tạo và tải file
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement("a");
+    const url = URL.createObjectURL(blob);
+    
+    link.setAttribute("href", url);
+    link.setAttribute("download", `DanhSachKhachHang_${new Date().toLocaleDateString('vi-VN')}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+}
 
 function exportCVToExcel() { let csv = "\ufeffTháng,Tổng tiền tích,CV,Tổng tiền nhập,Còn Lại,Ghi chú\n"; let allMonths = new Set(Object.keys(cvMonthlyStats)); cvAccumulations.forEach(acc => { if(acc.date) allMonths.add(acc.date.substring(0,7)); }); let sortedMonths = Array.from(allMonths).sort((a,b) => b.localeCompare(a)); sortedMonths.forEach(month => { let stat = cvMonthlyStats[month] || { cv: 0, importAmt: 0, note: '' }; let totalAcc = cvAccumulations.reduce((s, a) => (a.date && a.date.startsWith(month)) ? s + a.amount : s, 0); let remaining = totalAcc - stat.importAmt; let note = stat.note ? stat.note.replace(/"/g, '""') : ''; csv += `"${month}","${totalAcc}","${stat.cv}","${stat.importAmt}","${remaining}","${note}"\n`; }); const link = document.createElement("a"); link.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' })); link.download = `Thong_Ke_CV_${new Date().toISOString().slice(0,10)}.csv`; link.click(); showToast("Đã xuất file Excel thống kê CV!"); }
 

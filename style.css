@@ -1,3 +1,4 @@
+
 /* ========================================================
    BIẾN MÀU SẮC & CƠ BẢN
    ======================================================== */
@@ -186,7 +187,6 @@ table tbody tr:hover { background: #f8fafc; }
 
 @keyframes pulse-pink { 0% { box-shadow: 0 0 0 0 rgba(219, 39, 119, 0.4); } 70% { box-shadow: 0 0 0 8px rgba(219, 39, 119, 0); } 100% { box-shadow: 0 0 0 0 rgba(219, 39, 119, 0); } }
 @keyframes pulse-blue { 0% { box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.4); } 70% { box-shadow: 0 0 0 8px rgba(37, 99, 235, 0); } 100% { box-shadow: 0 0 0 0 rgba(37, 99, 235, 0); } }
-
 .birthday-today { background-color: #db2777 !important; color: white !important; animation: pulse-pink 2s infinite; font-weight: 800 !important; border-color: #be185d !important; border-radius: 8px; }
 .anniversary-today { background-color: #2563eb !important; color: white !important; animation: pulse-blue 2s infinite; font-weight: 800 !important; border-color: #1d4ed8 !important; border-radius: 8px; }
 .bg-light-pink { background-color: #fce7f3 !important; color: #db2777; font-weight: 700; border-radius: 8px; }
@@ -197,5 +197,3 @@ table tbody tr:hover { background: #f8fafc; }
 
 #invoiceModal > div > div, #invoiceModal * { text-shadow: none; }
 #invoiceContent { background: white; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.2); }
-
-#profileModal::-webkit-scrollbar { width: 0px; background: transparent; }
