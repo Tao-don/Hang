@@ -26,7 +26,7 @@ const storage = getStorage(app);
 const googleProvider = new GoogleAuthProvider();
 
 let currentUser = null;
-let currentAuthMode = 'login'; // 'login', 'register', 'reset'
+let currentAuthMode = 'login'; 
 let selectedAvatarFile = null;
 
 // Đảm bảo khi trang web tải xong sẽ có sẵn 1 hàng sản phẩm
@@ -39,6 +39,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // Data Reference
 const storeRef = ref(db, 'SunsetShopData/StoreData');
+const connectedRef = ref(db, ".info/connected"); // Theo dõi trạng thái kết nối
 
 // ==========================================
 // CHẾ ĐỘ THỬ NGHIỆM (OFFLINE MODE)
@@ -69,6 +70,7 @@ function removeAccents(str) {
 
 function parseDateString(dateStr) {
     if (!dateStr) return null;
+    if (typeof dateStr !== 'string') dateStr = String(dateStr);
     if (dateStr.includes('-')) {
         const parts = dateStr.split('-');
         if (parts[0].length === 4) return { y: parseInt(parts[0]), m: parseInt(parts[1]), d: parseInt(parts[2]) }; 
@@ -102,21 +104,6 @@ function getLocalDateString() {
     const mm = String(vnTime.getMonth() + 1).padStart(2, '0');
     const dd = String(vnTime.getDate()).padStart(2, '0');
     return `${yyyy}-${mm}-${dd}`;
-}
-
-function dateToNumber(dateStr) {
-    if (!dateStr) return 0;
-    let y = 0, m = 0, d = 0;
-    if (dateStr.includes('-')) {
-        const parts = dateStr.split('-');
-        if (parts[0].length === 4) { y = parseInt(parts[0]); m = parseInt(parts[1]); d = parseInt(parts[2]); }
-        else { d = parseInt(parts[0]); m = parseInt(parts[1]); y = parseInt(parts[2]); }
-    } else if (dateStr.includes('/')) {
-        const parts = dateStr.split('/');
-        if (parts[2].length === 4) { d = parseInt(parts[0]); m = parseInt(parts[1]); y = parseInt(parts[2]); }
-        else { y = parseInt(parts[0]); m = parseInt(parts[1]); d = parseInt(parts[2]); }
-    }
-    return y * 10000 + m * 100 + d;
 }
 
 // ==========================================
@@ -223,7 +210,10 @@ function syncData(updates = null) {
     if (isOfflineMode) return Promise.resolve(); 
 
     if (updates) {
-        return update(storeRef, updates).catch(err => showCustomAlert("Lỗi đồng bộ: " + err.message, "error"));
+        return update(storeRef, updates).catch(err => {
+            console.error(err);
+            showCustomAlert("Lỗi đồng bộ Firebase: " + err.message, "error");
+        });
     } else {
         return set(storeRef, {
             v11_orders: orders.reduce((acc, o) => { acc[o.id] = o; return acc; }, {}),
@@ -231,11 +221,14 @@ function syncData(updates = null) {
             v11_inventory: inventory,
             v11_cv_accumulations: cvAccumulations,
             v11_cv_monthly: cvMonthlyStats
-        }).catch(err => showCustomAlert("Lỗi đồng bộ: " + err.message, "error"));
+        }).catch(err => {
+            console.error(err);
+            showCustomAlert("Lỗi đồng bộ Firebase: " + err.message, "error");
+        });
     }
 }
 
-let unsubscribeDB = null; // Biến lưu trữ luồng kết nối
+let unsubscribeDB = null; 
 
 function initDataSync() {
     if (isOfflineMode) {
@@ -245,32 +238,53 @@ function initDataSync() {
         return;
     }
 
-    // RẤT QUAN TRỌNG: Hủy luồng lắng nghe cũ nếu có trước khi mở luồng mới
     if (unsubscribeDB) {
         unsubscribeDB();
     }
 
-    // Mở luồng lắng nghe mới và lưu lại hàm hủy vào unsubscribeDB
+    // Console log để nhận biết trạng thái mạng real-time
+    onValue(connectedRef, (snap) => {
+        if (snap.val() === true) {
+            console.log("🟢 Firebase đã kết nối: Đồng bộ Realtime Sẵn Sàng!");
+        } else {
+            console.log("🔴 Đang mất kết nối Firebase...");
+        }
+    });
+
+    // SỬA LỖI TRỌNG TÂM Ở ĐÂY: Bọc Try/Catch và Ép kiểu an toàn để Listener không bao giờ chết
     unsubscribeDB = onValue(storeRef, (snapshot) => {
-        const data = snapshot.val() || {};
-        let rawOrders = data.v11_orders || {};
-        
-        orders = Object.keys(rawOrders).map(key => {
-            let obj = rawOrders[key];
-            if (!obj) return null;
-            obj.id = key; 
-            if (!obj.timestamp) obj.timestamp = parseInt(key) || Date.now();
-            return obj;
-        }).filter(obj => obj !== null).sort((a, b) => b.timestamp - a.timestamp);
+        try {
+            const data = snapshot.val() || {};
+            
+            // Xử lý Orders an toàn
+            let rawOrders = data.v11_orders || {};
+            orders = Object.keys(rawOrders).map(key => {
+                let obj = rawOrders[key];
+                if (!obj) return null;
+                obj.id = key; 
+                if (!obj.timestamp) obj.timestamp = parseInt(key) || Date.now();
+                if (!obj.products) obj.products = [];
+                if (!obj.customer) obj.customer = { name: '', phone: '', addr: '', type: 'new' };
+                if (!obj.discount) obj.discount = { val: 0, type: 'amount' };
+                return obj;
+            }).filter(obj => obj !== null).sort((a, b) => b.timestamp - a.timestamp);
 
-        customers = data.v11_customers || {};
-        inventory = data.v11_inventory || [];
-        cvAccumulations = data.v11_cv_accumulations || [];
-        cvMonthlyStats = data.v11_cv_monthly || {};
+            customers = data.v11_customers || {};
 
-        saveToLocal(); 
+            // FIX CỰC KỲ QUAN TRỌNG: Firebase tự động biến Sparse Array thành Object
+            // Phải ép kiểu về mảng chuẩn nếu không các hàm .map() và .forEach() bên dưới sẽ làm Crash App
+            inventory = Array.isArray(data.v11_inventory) ? data.v11_inventory : (data.v11_inventory ? Object.values(data.v11_inventory) : []);
+            cvAccumulations = Array.isArray(data.v11_cv_accumulations) ? data.v11_cv_accumulations : (data.v11_cv_accumulations ? Object.values(data.v11_cv_accumulations) : []);
+            
+            cvMonthlyStats = data.v11_cv_monthly || {};
 
-        if (!isLocalAction) refreshAllViews();
+            saveToLocal(); 
+
+            if (!isLocalAction) refreshAllViews();
+
+        } catch (error) {
+            console.error("🔥 LỖI NGHIÊM TRỌNG TRONG LUỒNG ĐỒNG BỘ ONVALUE:", error);
+        }
     });
 }
 
@@ -278,46 +292,43 @@ function initDataSync() {
 let pendingRenderTarget = { crm: false, inventory: false, cv: false };
 
 function refreshAllViews() {
-    const activeEl = document.activeElement;
+    try {
+        const activeEl = document.activeElement;
 
-    // Phân vùng kiểm tra: Chỉ chặn nếu đang gõ trực tiếp vào các ô input BÊN TRONG BẢNG CỤ THỂ
-    const isEditingInventory = activeEl && document.getElementById('inventoryTableBody')?.contains(activeEl);
-    const isEditingCRM = activeEl && document.getElementById('customerTableBody')?.contains(activeEl);
-    const isEditingCV = activeEl && document.getElementById('cvAccTableBody')?.contains(activeEl);
+        const isEditingInventory = activeEl && document.getElementById('inventoryTableBody')?.contains(activeEl);
+        const isEditingCRM = activeEl && document.getElementById('customerTableBody')?.contains(activeEl);
+        const isEditingCV = activeEl && document.getElementById('cvAccTableBody')?.contains(activeEl);
 
-    // 1. Tab Đơn Hàng: Render thoải mái (Form thêm đơn ở trên không bị ảnh hưởng khi bảng ở dưới load lại)
-    if (!document.getElementById('view-orders').classList.contains('hidden')) {
-        renderTable(); 
-        checkAndShowEvents();
-    }
+        if (!document.getElementById('view-orders').classList.contains('hidden')) {
+            renderTable(); 
+            checkAndShowEvents();
+        }
 
-    // 2. Tab Khách hàng
-    if (!document.getElementById('view-customers').classList.contains('hidden')) {
-        if (!isEditingCRM) renderCustomerCRM();
-        else pendingRenderTarget.crm = true;
-    }
+        if (!document.getElementById('view-customers').classList.contains('hidden')) {
+            if (!isEditingCRM) renderCustomerCRM();
+            else pendingRenderTarget.crm = true;
+        }
 
-    // 3. Tab Kho
-    if (!document.getElementById('view-inventory').classList.contains('hidden')) {
-        if (!isEditingInventory) renderInventory();
-        else pendingRenderTarget.inventory = true;
-    }
+        if (!document.getElementById('view-inventory').classList.contains('hidden')) {
+            if (!isEditingInventory) renderInventory();
+            else pendingRenderTarget.inventory = true;
+        }
 
-    // 4. Tab Báo Cáo: Render thoải mái
-    if (!document.getElementById('view-analytics').classList.contains('hidden')) {
-        renderAnalytics();
-    }
+        if (!document.getElementById('view-analytics').classList.contains('hidden')) {
+            renderAnalytics();
+        }
 
-    // 5. Tab CV
-    if (!document.getElementById('view-cv').classList.contains('hidden')) {
-        if (!isEditingCV) renderCVAccumulations();
-        else pendingRenderTarget.cv = true;
-        renderCVSummary(); 
-        renderCVMonthlyStats();
+        if (!document.getElementById('view-cv').classList.contains('hidden')) {
+            if (!isEditingCV) renderCVAccumulations();
+            else pendingRenderTarget.cv = true;
+            renderCVSummary(); 
+            renderCVMonthlyStats();
+        }
+    } catch (error) {
+        console.error("Lỗi khi Refresh giao diện:", error);
     }
 }
 
-// Lắng nghe khi người dùng gõ xong và click chuột ra ngoài (focusout)
 document.addEventListener('focusout', (e) => {
     setTimeout(() => {
         const activeEl = document.activeElement;
@@ -325,7 +336,6 @@ document.addEventListener('focusout', (e) => {
         const isEditingCRM = activeEl && document.getElementById('customerTableBody')?.contains(activeEl);
         const isEditingCV = activeEl && document.getElementById('cvAccTableBody')?.contains(activeEl);
 
-        // Vẽ lại bảng nếu trước đó bị nghẽn và giờ đã gõ xong
         if (pendingRenderTarget.crm && !isEditingCRM) { renderCustomerCRM(); pendingRenderTarget.crm = false; }
         if (pendingRenderTarget.inventory && !isEditingInventory) { renderInventory(); pendingRenderTarget.inventory = false; }
         if (pendingRenderTarget.cv && !isEditingCV) { renderCVAccumulations(); pendingRenderTarget.cv = false; }
@@ -398,13 +408,14 @@ function addInventoryProduct() {
     const price = parseCurrency(document.getElementById('invPrice').value);
     const qty = parseInt(document.getElementById('invQty').value) || 0;
     if(!name) return showToast("Nhập tên sản phẩm!");
-    if(inventory.find(p => p.name.toLowerCase() === name.toLowerCase())) return showCustomAlert("Sản phẩm đã tồn tại trong kho!", "warning");
+    if(inventory.find(p => p.name && p.name.toLowerCase() === name.toLowerCase())) return showCustomAlert("Sản phẩm đã tồn tại trong kho!", "warning");
     inventory.push({ name, price: price || 0, qty: qty });
     document.getElementById('invName').value = ''; document.getElementById('invPrice').value = ''; document.getElementById('invQty').value = '';
     saveInventory(); renderInventory(); showToast("Đã nhập kho!");
 }
 
 function updateInventoryProduct(index, field, value) {
+    if (!inventory[index]) return;
     if(field === 'qty') inventory[index].qty = parseInt(value) || 0;
     else if(field === 'price') inventory[index].price = parseCurrency(value) || 0;
     else inventory[index][field] = value;
@@ -421,21 +432,26 @@ function deleteInventoryProduct(index) {
 
 function renderInventory() {
     const tbody = document.getElementById('inventoryTableBody');
+    if (!tbody) return;
     const filterMode = document.getElementById('inventoryFilter') ? document.getElementById('inventoryFilter').value : 'all';
     let html = '';
-    inventory.forEach((p, originalIdx) => {
-        const isOut = OUT_KEYWORDS.some(k => p.name.toUpperCase().includes(k));
-        if (filterMode === 'out' && !isOut) return;
-        if (filterMode === 'vnl' && isOut) return;
-        const stockClass = p.qty <= 5 ? "stock-low" : "stock-ok";
-        html += `
-        <tr class="hover:bg-white transition-colors">
-            <td class="p-3"><input type="text" value="${p.name}" onchange="updateInventoryProduct(${originalIdx}, 'name', this.value)" class="crm-input font-bold text-[#034C5F]"></td>
-            <td class="p-3"><input type="text" inputmode="numeric" value="${new Intl.NumberFormat('en-US').format(p.price)}" oninput="formatCurrencyInput(this)" onchange="updateInventoryProduct(${originalIdx}, 'price', this.value)" class="crm-input text-[#EE6457]"></td>
-            <td class="p-3 text-center"><input type="number" value="${p.qty}" onchange="updateInventoryProduct(${originalIdx}, 'qty', this.value)" class="crm-input text-center ${stockClass}" style="font-size:14px;"></td>
-            <td class="p-3 text-right"><button onclick="deleteInventoryProduct(${originalIdx})" class="text-slate-300 hover:text-red-500"><i class="fa-solid fa-trash"></i></button></td>
-        </tr>`;
-    });
+    
+    if (Array.isArray(inventory)) {
+        inventory.forEach((p, originalIdx) => {
+            if (!p || !p.name) return;
+            const isOut = OUT_KEYWORDS.some(k => p.name.toUpperCase().includes(k));
+            if (filterMode === 'out' && !isOut) return;
+            if (filterMode === 'vnl' && isOut) return;
+            const stockClass = p.qty <= 5 ? "stock-low" : "stock-ok";
+            html += `
+            <tr class="hover:bg-white transition-colors">
+                <td class="p-3"><input type="text" value="${p.name}" onchange="updateInventoryProduct(${originalIdx}, 'name', this.value)" class="crm-input font-bold text-[#034C5F]"></td>
+                <td class="p-3"><input type="text" inputmode="numeric" value="${new Intl.NumberFormat('en-US').format(p.price)}" oninput="formatCurrencyInput(this)" onchange="updateInventoryProduct(${originalIdx}, 'price', this.value)" class="crm-input text-[#EE6457]"></td>
+                <td class="p-3 text-center"><input type="number" value="${p.qty}" onchange="updateInventoryProduct(${originalIdx}, 'qty', this.value)" class="crm-input text-center ${stockClass}" style="font-size:14px;"></td>
+                <td class="p-3 text-right"><button onclick="deleteInventoryProduct(${originalIdx})" class="text-slate-300 hover:text-red-500"><i class="fa-solid fa-trash"></i></button></td>
+            </tr>`;
+        });
+    }
     tbody.innerHTML = html;
 }
 
@@ -454,10 +470,8 @@ function addProductRow(name = '', price = '', qty = 1) {
     const formattedPrice = price ? new Intl.NumberFormat('en-US').format(price) : '';
 
     const div = document.createElement('div');
-    // Loại bỏ bg-white, shadow và border. Đổi lại khoảng cách dòng cho thoáng
     div.className = "product-row grid grid-cols-12 gap-y-2 gap-x-2 items-center py-2 border-b border-slate-100/50 last:border-0";
     
-    // Sử dụng Responsive Grid (Thêm md: để phân biệt ĐT và Máy tính)
     div.innerHTML = `
         <div class="col-span-12 md:col-span-5 relative">
             <input type="text" class="form-input text-xs font-bold p-name" placeholder="Tên sản phẩm..." value="${name}">
@@ -493,7 +507,6 @@ function calculateTotal() {
     });
 
     const ship = parseCurrency(document.getElementById('shipFee').value) || 0;
-    
     const dValStr = document.getElementById('discountVal').value.replace(/,/g, '');
     const dVal = parseCurrency(dValStr) || 0;
     const dType = document.getElementById('discountType').value;
@@ -536,13 +549,13 @@ function saveOrder() {
     
     if (isEdit && existingOrder) {
         existingOrder.products.forEach(oldP => {
-            const invItem = inventory.find(i => i.name.toLowerCase() === oldP.name.toLowerCase());
+            const invItem = inventory.find(i => i.name && i.name.toLowerCase() === oldP.name.toLowerCase());
             if (invItem) invItem.qty = Number(invItem.qty) + Number(oldP.qty);
         });
     }
 
     products.forEach(p => {
-        const invItem = inventory.find(i => i.name.toLowerCase() === p.name.toLowerCase());
+        const invItem = inventory.find(i => i.name && i.name.toLowerCase() === p.name.toLowerCase());
         if (invItem) {
             invItem.qty = Math.max(0, Number(invItem.qty) - Number(p.qty));
         } else {
@@ -559,7 +572,6 @@ function saveOrder() {
     }
 
     const { subtotal, total } = calculateTotal();
-    
     const orderTimestamp = (isEdit && existingOrder) ? existingOrder.timestamp : Date.now();
 
     const order = { 
@@ -568,8 +580,8 @@ function saveOrder() {
         customer: { name, phone, addr, type }, 
         products, 
         payMethod: document.getElementById('payMethod').value, 
-        shipFee: parseCurrency(document.getElementById('shipFee').value) || 0, // <--- SỬA TẠI ĐÂY
-        discount: { val: parseCurrency(document.getElementById('discountVal').value) || 0, type: document.getElementById('discountType').value }, // <--- SỬA TẠI ĐÂY
+        shipFee: parseCurrency(document.getElementById('shipFee').value) || 0, 
+        discount: { val: parseCurrency(document.getElementById('discountVal').value) || 0, type: document.getElementById('discountType').value }, 
         orderDate: document.getElementById('orderDate').value,
         date: document.getElementById('shipDate').value, 
         deliveryDate: document.getElementById('deliveryDate').value, 
@@ -610,10 +622,11 @@ function renderTable() {
     const search = document.getElementById('searchOrderInput').value.toLowerCase();
     
     let filtered = orders.filter(o => {
+        if (!o.customer) return false;
         const targetDate = o.orderDate || o.date;
         const dateMatch = (!fStart || targetDate >= fStart) && (!fEnd || targetDate <= fEnd);
         const typeMatch = (fType === 'all' || o.customer.type === fType);
-        const searchMatch = !search || o.customer.name.toLowerCase().includes(search) || o.customer.phone.includes(search);
+        const searchMatch = !search || (o.customer.name && o.customer.name.toLowerCase().includes(search)) || (o.customer.phone && o.customer.phone.includes(search));
         return dateMatch && typeMatch && searchMatch;
     });
     
@@ -633,21 +646,26 @@ function renderTable() {
             ? "bg-[#EE6457]/10 text-[#EE6457] border border-[#EE6457]/30" 
             : "bg-slate-100 text-slate-400 border border-slate-200 opacity-60"; 
 
+        // Fix triệt để lỗi String undefined làm đứt gãy luồng DOM Rendering
+        const safeName = (o.customer.name || '').replace(/'/g, "\\'");
+        const safePhone = o.customer.phone || '';
+        const safeAddr = (o.customer.addr || '').replace(/'/g, "\\'").replace(/\n/g, ' ');
+
         return `
         <tr class="hover:bg-[#FDF5F4]/50 transition-colors">
             <td class="p-4">
                 <div class="flex items-start gap-2">
                     <div>
-                        <b>${o.customer.name}</b> 
+                        <b>${o.customer.name || 'Khách'}</b> 
                         <span class="text-[9px] px-1.5 py-0.5 rounded ${o.customer.type === 'ttd' ? 'bg-purple-100 text-purple-600' : 'bg-blue-100 text-blue-600'} font-bold uppercase ml-1">${o.customer.type === 'ttd' ? 'TTD' : 'Mới'}</span>
-                        <br><span class="text-xs text-[#97BEC6]">${o.customer.phone}</span>
+                        <br><span class="text-xs text-[#97BEC6]">${safePhone}</span>
                     </div>
-                    <button onclick="copyCustomerInfo('${o.customer.name.replace(/'/g, "\\'")}', '${o.customer.phone}', '${o.customer.addr.replace(/'/g, "\\'").replace(/\n/g, ' ')}')">
+                    <button onclick="copyCustomerInfo('${safeName}', '${safePhone}', '${safeAddr}')">
                         <i class="fa-solid fa-copy text-[10px]"></i>
                     </button>
                 </div>
             </td>
-            <td class="p-4 text-xs text-slate-500 line-clamp-1">${o.products.map(p => `${p.name} (x${p.qty})`).join(', ')}</td>
+            <td class="p-4 text-xs text-slate-500 line-clamp-1">${o.products ? o.products.map(p => `${p.name} (x${p.qty})`).join(', ') : ''}</td>
             <td class="p-4 text-center">
                     <span id="ship-badge-${o.id}" class="${shipDateStyle} font-black px-3 py-1 rounded-lg text-[11px] shadow-sm whitespace-nowrap transition-all">
                     <i class="fa-solid fa-truck-fast mr-1"></i>${formattedShipDate}
@@ -697,7 +715,6 @@ function renderTable() {
     }).join('');
 }
 
-
 function changeOrderStatus(id, newStatus) {
     const index = orders.findIndex(o => o.id == id);
     if (index !== -1) {
@@ -741,7 +758,7 @@ function deleteOrder(id) {
 
         if (orderToDelete.products && Array.isArray(orderToDelete.products)) {
             orderToDelete.products.forEach(p => {
-                const invItem = inventory.find(i => i.name.toLowerCase() === p.name.toLowerCase());
+                const invItem = inventory.find(i => i.name && i.name.toLowerCase() === p.name.toLowerCase());
                 if (invItem) invItem.qty = Number(invItem.qty) + Number(p.qty); 
             });
         }
@@ -787,9 +804,7 @@ function addManualCustomer() {
 function updateCustomerField(p, f, v) { 
     if(customers[p]) { 
         customers[p][f] = v; 
-        
         syncData({ [`v11_customers/${p}/${f}`]: v }); 
-        
         if(f === 'birthday' || f === 'anniversary') {
             checkAndShowEvents();
         }
@@ -815,7 +830,7 @@ function renderCustomerCRM() {
     const sortMode = document.getElementById('customerSortOrder').value; 
     let keys = Object.keys(customers);
 
-        const searchInput = document.getElementById('searchCustomerInput');
+    const searchInput = document.getElementById('searchCustomerInput');
     if (searchInput && searchInput.value) {
         const searchTerms = removeAccents(searchInput.value.trim()).split(' ');
         
@@ -944,7 +959,7 @@ function renderCVAccumulations() {
 
     tbody.innerHTML = filtered.map((acc) => `
         <tr class="hover:bg-slate-50 transition-colors">
-            <td class="p-4 font-bold text-[#034C5F]">${acc.date.split('-').reverse().join('/')}</td>
+            <td class="p-4 font-bold text-[#034C5F]">${(acc.date || '').split('-').reverse().join('/')}</td>
             <td class="p-4 text-right font-black text-[#EE6457] text-[16px]">${new Intl.NumberFormat('en-US').format(acc.amount)} đ</td>
             <td class="p-4 text-center"><span class="px-2 py-1 bg-slate-100 rounded-md text-xs font-bold text-slate-600">${acc.method}</span></td>
             <td class="p-4 text-xs italic text-slate-500">${acc.note || ''}</td>
@@ -1017,14 +1032,14 @@ function renderCVMonthlyStats() {
     const filterYear = document.getElementById('cvMonthTableFilterYear') ? document.getElementById('cvMonthTableFilterYear').value : 'all';
     
     let allMonths = new Set(Object.keys(cvMonthlyStats));
-    cvAccumulations.forEach(acc => { if(acc.date) allMonths.add(acc.date.substring(0,7)); });
+    cvAccumulations.forEach(acc => { if(acc && acc.date) allMonths.add(acc.date.substring(0,7)); });
 
     let sortedMonths = Array.from(allMonths).sort((a,b) => b.localeCompare(a));
     if(filterYear !== 'all') sortedMonths = sortedMonths.filter(month => month.startsWith(filterYear));
 
     tbody.innerHTML = sortedMonths.map(month => {
         let stat = cvMonthlyStats[month] || { cv: 0, importAmt: 0, note: '' };
-        let totalAcc = cvAccumulations.reduce((s, a) => (a.date && a.date.startsWith(month)) ? s + a.amount : s, 0);
+        let totalAcc = cvAccumulations.reduce((s, a) => (a && a.date && a.date.startsWith(month)) ? s + a.amount : s, 0);
         let remaining = totalAcc - stat.importAmt;
         let noteHtml = stat.note ? `<div class="text-[10px] text-slate-500 italic mt-1 bg-slate-50 p-1 rounded"><i class="fa-solid fa-quote-left mr-1 opacity-50"></i>${stat.note}</div>` : '';
         
@@ -1066,19 +1081,19 @@ function openInvoice(id) {
         <div style="padding:0 20px 10px 20px; background:white;"> 
             <div style="display:flex; justify-content:space-between; border-bottom:1px solid #f1f5f9; padding-bottom:15px; margin-bottom:10px;"> 
                 <div style="text-align: left;">
-                    <p style="font-weight:800; font-size:16px; margin:0; color:#034C5F; line-height: 2.0; padding-bottom: 2px;">${o.customer.name}</p> 
-                    <p style="color:#44; font-size:13px; margin:3px 0; line-height: 1.4;">${o.customer.phone}</p> 
-                    <p style="color:#44; font-size:11px; margin:0; max-width:200px; line-height: 1.5;">${o.customer.addr}</p> 
+                    <p style="font-weight:800; font-size:16px; margin:0; color:#034C5F; line-height: 2.0; padding-bottom: 2px;">${o.customer.name || ''}</p> 
+                    <p style="color:#44; font-size:13px; margin:3px 0; line-height: 1.4;">${o.customer.phone || ''}</p> 
+                    <p style="color:#44; font-size:11px; margin:0; max-width:200px; line-height: 1.5;">${o.customer.addr || ''}</p> 
                 </div> 
                 <div style="text-align:right; font-size:11px; color:#64748b; line-height: 2.3;"> 
-                    <p style="margin:0;">Ngày đặt: <b style="display:inline-block; padding-bottom:1px;">${(o.orderDate || o.date).split('-').reverse().join('/')}</b></p> 
-                    <p style="margin:0;">Ngày gửi: <b style="display:inline-block; padding-bottom:1px;">${o.date.split('-').reverse().join('/')}</b></p> 
-                    <p style="margin:0;">Dự Kiến Nhận: <b style="display:inline-block; padding-bottom:1px;">${o.deliveryDate.split('-').reverse().join('/')}</b></p> 
+                    <p style="margin:0;">Ngày đặt: <b style="display:inline-block; padding-bottom:1px;">${(o.orderDate || o.date || '').split('-').reverse().join('/')}</b></p> 
+                    <p style="margin:0;">Ngày gửi: <b style="display:inline-block; padding-bottom:1px;">${(o.date || '').split('-').reverse().join('/')}</b></p> 
+                    <p style="margin:0;">Dự Kiến Nhận: <b style="display:inline-block; padding-bottom:1px;">${(o.deliveryDate || '').split('-').reverse().join('/')}</b></p> 
                     <p style="color:#EE6457; font-weight:800; margin-top:5px; text-transform:uppercase; line-height: 1.8;">${o.payMethod}</p> 
                 </div> 
             </div> 
             <table style="width:100%; border-collapse:collapse; font-size:13px; line-height: 2.0;"> 
-                ${o.products.map(p => `<tr><td style="padding:10px 0; border-bottom:1px solid #f8fafc; text-align: left;">${p.name} (x${p.qty})</td><td style="text-align:right; font-weight:700; color:#034C5F;">${formatMoney(p.price*p.qty)}</td></tr>`).join('')} 
+                ${(o.products || []).map(p => `<tr><td style="padding:10px 0; border-bottom:1px solid #f8fafc; text-align: left;">${p.name} (x${p.qty})</td><td style="text-align:right; font-weight:700; color:#034C5F;">${formatMoney(p.price*p.qty)}</td></tr>`).join('')} 
             </table> 
             ${noteHtml} 
             <div style="border-top:2px solid #034C5F; padding-top:15px; margin-bottom:20px;"> 
@@ -1095,18 +1110,15 @@ function openInvoice(id) {
 }
 
 function resetForm() { 
-    // Reset chính thức từ thẻ form (nếu có)
     const form = document.getElementById('orderForm');
     if(form) form.reset(); 
     
-    // Sửa lỗi Reset số 3: Chủ động xóa trắng sạch sẽ tất cả các Input/Textarea người dùng đã nhập
     const fieldsToClear = ['editOrderId', 'custPhone', 'custName', 'custAddr', 'orderNote', 'shipFee', 'discountVal'];
     fieldsToClear.forEach(id => {
         const el = document.getElementById(id);
         if(el) el.value = '';
     });
 
-    // Chủ động Reset lại các Dropdown (Select) về lựa chọn mặc định ban đầu
     const custTypeEl = document.getElementById('custType');
     if (custTypeEl) custTypeEl.value = 'new';
     
@@ -1116,11 +1128,9 @@ function resetForm() {
     const discountTypeEl = document.getElementById('discountType');
     if (discountTypeEl) discountTypeEl.value = 'amount';
 
-    // Xóa sạch danh sách sản phẩm và tự động nhả lại 1 ô nhập sản phẩm trống
     document.getElementById('product-list').innerHTML = ""; 
     addProductRow(); 
     
-    // Reset ngày tháng về hôm nay
     const todayStr = getLocalDateString();
     const orderDateEl = document.getElementById('orderDate');
     if (orderDateEl) orderDateEl.value = todayStr; 
@@ -1131,7 +1141,6 @@ function resetForm() {
     autoSetDeliveryDate(); 
     calculateTotal(); 
     
-    // Reset lại trạng thái của nút
     const btnSave = document.getElementById('btnSave');
     if (btnSave) btnSave.innerHTML = '<i class="fa-solid fa-check-double mr-2"></i>Lưu đơn'; 
 }
@@ -1142,7 +1151,7 @@ function editOrder(id) {
     if(!o) return;
     document.getElementById('editOrderId').value = o.id; document.getElementById('custPhone').value = o.customer.phone; document.getElementById('custName').value = o.customer.name; document.getElementById('custAddr').value = o.customer.addr; document.getElementById('custType').value = o.customer.type || 'new'; 
     document.getElementById('product-list').innerHTML = ""; 
-    o.products.forEach(p => addProductRow(p.name, p.price, p.qty)); 
+    if (o.products) o.products.forEach(p => addProductRow(p.name, p.price, p.qty)); 
     document.getElementById('payMethod').value = o.payMethod; document.getElementById('shipFee').value = new Intl.NumberFormat('en-US').format(o.shipFee); document.getElementById('discountVal').value = o.discount.type === 'amount' ? new Intl.NumberFormat('en-US').format(o.discount.val) : o.discount.val; document.getElementById('discountType').value = o.discount.type; document.getElementById('orderDate').value = o.orderDate || o.date; document.getElementById('shipDate').value = o.date; document.getElementById('deliveryDate').value = o.deliveryDate; document.getElementById('orderNote').value = o.note || ''; 
     document.getElementById('btnSave').innerHTML = '<i class="fa-solid fa-rotate mr-2"></i>Cập nhật'; 
     calculateTotal(); window.scrollTo({ top: 0, behavior: 'smooth' }); 
@@ -1277,7 +1286,7 @@ function exportCustomersToExcel() {
     document.body.removeChild(link);
 }
 
-function exportCVToExcel() { let csv = "\ufeffTháng,Tổng tiền tích,CV,Tổng tiền nhập,Còn Lại,Ghi chú\n"; let allMonths = new Set(Object.keys(cvMonthlyStats)); cvAccumulations.forEach(acc => { if(acc.date) allMonths.add(acc.date.substring(0,7)); }); let sortedMonths = Array.from(allMonths).sort((a,b) => b.localeCompare(a)); sortedMonths.forEach(month => { let stat = cvMonthlyStats[month] || { cv: 0, importAmt: 0, note: '' }; let totalAcc = cvAccumulations.reduce((s, a) => (a.date && a.date.startsWith(month)) ? s + a.amount : s, 0); let remaining = totalAcc - stat.importAmt; let note = stat.note ? stat.note.replace(/"/g, '""') : ''; csv += `"${month}","${totalAcc}","${stat.cv}","${stat.importAmt}","${remaining}","${note}"\n`; }); const link = document.createElement("a"); link.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' })); link.download = `Thong_Ke_CV_${new Date().toISOString().slice(0,10)}.csv`; link.click(); showToast("Đã xuất file Excel thống kê CV!"); }
+function exportCVToExcel() { let csv = "\ufeffTháng,Tổng tiền tích,CV,Tổng tiền nhập,Còn Lại,Ghi chú\n"; let allMonths = new Set(Object.keys(cvMonthlyStats)); cvAccumulations.forEach(acc => { if(acc && acc.date) allMonths.add(acc.date.substring(0,7)); }); let sortedMonths = Array.from(allMonths).sort((a,b) => b.localeCompare(a)); sortedMonths.forEach(month => { let stat = cvMonthlyStats[month] || { cv: 0, importAmt: 0, note: '' }; let totalAcc = cvAccumulations.reduce((s, a) => (a && a.date && a.date.startsWith(month)) ? s + a.amount : s, 0); let remaining = totalAcc - stat.importAmt; let note = stat.note ? stat.note.replace(/"/g, '""') : ''; csv += `"${month}","${totalAcc}","${stat.cv}","${stat.importAmt}","${remaining}","${note}"\n`; }); const link = document.createElement("a"); link.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' })); link.download = `Thong_Ke_CV_${new Date().toISOString().slice(0,10)}.csv`; link.click(); showToast("Đã xuất file Excel thống kê CV!"); }
 
 function renderAnalytics() {
     const startInput = document.getElementById('filterStart');
@@ -1298,15 +1307,17 @@ function renderAnalytics() {
         const net = o.total - o.shipFee; grandTotal += net; if(o.isPaid) sCollected += net;
         const targetDate = o.orderDate || o.date;
         if(dailyRevenue[targetDate]) dailyRevenue[targetDate] += net; else dailyRevenue[targetDate] = net;
-        o.products.forEach(p => {
-            const ratio = o.subtotal > 0 ? (p.price * p.qty / o.subtotal) : 0;
-            if(OUT_KEYWORDS.some(k => p.name.toUpperCase().includes(k))) sOut += ratio * net; else sVnl += ratio * net;
-        });
-        if(o.customer.type === 'ttd') sTtd += net; else sNew += net;
+        if (o.products) {
+            o.products.forEach(p => {
+                const ratio = o.subtotal > 0 ? (p.price * p.qty / o.subtotal) : 0;
+                if(p.name && OUT_KEYWORDS.some(k => p.name.toUpperCase().includes(k))) sOut += ratio * net; else sVnl += ratio * net;
+            });
+        }
+        if(o.customer && o.customer.type === 'ttd') sTtd += net; else sNew += net;
     });
     
     let bomTotalValue = bomOrders.reduce((sum, o) => sum + o.total, 0);
-    let sAccumulated = cvAccumulations.reduce((s, a) => (a.date && (!start || a.date >= start) && (!end || a.date <= end)) ? s + a.amount : s, 0);
+    let sAccumulated = cvAccumulations.reduce((s, a) => (a && a.date && (!start || a.date >= start) && (!end || a.date <= end)) ? s + a.amount : s, 0);
     let sIncome = sCollected - sAccumulated;
 
     document.getElementById('statOut').innerText = formatMoney(sOut); document.getElementById('statVnl').innerText = formatMoney(sVnl); document.getElementById('statNew').innerText = formatMoney(sNew); document.getElementById('statTtd').innerText = formatMoney(sTtd); document.getElementById('totalPeriodRevenue').innerText = formatMoney(grandTotal); document.getElementById('statTotalOrders').innerText = validOrders.length; document.getElementById('statAvgOrder').innerText = validOrders.length ? formatMoney(grandTotal/validOrders.length) : '0 ₫'; document.getElementById('statBomCount').innerText = bomOrders.length; document.getElementById('statBomTotal').innerText = formatMoney(bomTotalValue); document.getElementById('statCollected').innerText = formatMoney(sCollected); document.getElementById('statIncome').innerText = formatMoney(sIncome);
@@ -1324,7 +1335,7 @@ function drawRevenueChart(dataObj) {
 }
 
 function initCVSummaryFilters() { let yearSelect = document.getElementById('cvSumYear'); let tableYearSelect = document.getElementById('cvMonthTableFilterYear'); let currentYear = new Date().getFullYear(); let yearsHtml = `<option value="all">Tất cả</option>`; for(let y = currentYear - 6; y <= currentYear + 2; y++) yearsHtml += `<option value="${y}" ${y === currentYear ? 'selected' : ''}>Năm ${y}</option>`; if(yearSelect) yearSelect.innerHTML = yearsHtml; if(tableYearSelect) tableYearSelect.innerHTML = yearsHtml; }
-function renderCVSummary() { let mFilter = document.getElementById('cvSumMonth').value; let yFilter = document.getElementById('cvSumYear').value; let totalCV = 0; let totalAcc = 0; let totalImport = 0; cvAccumulations.forEach(acc => { if(!acc.date) return; let [y, m, d] = acc.date.split('-'); if( (yFilter === 'all' || y === yFilter) && (mFilter === 'all' || m === mFilter) ) totalAcc += acc.amount; }); for (let monthKey in cvMonthlyStats) { let [y, m] = monthKey.split('-'); if( (yFilter === 'all' || y === yFilter) && (mFilter === 'all' || m === mFilter) ) { totalCV += cvMonthlyStats[monthKey].cv || 0; totalImport += cvMonthlyStats[monthKey].importAmt || 0; } } document.getElementById('sumCV').innerText = new Intl.NumberFormat('en-US').format(totalCV) + ' Cv'; document.getElementById('sumAcc').innerText = formatMoney(totalAcc); document.getElementById('sumImport').innerText = formatMoney(totalImport); document.getElementById('sumRemain').innerText = formatMoney(totalAcc - totalImport); }
+function renderCVSummary() { let mFilter = document.getElementById('cvSumMonth').value; let yFilter = document.getElementById('cvSumYear').value; let totalCV = 0; let totalAcc = 0; let totalImport = 0; cvAccumulations.forEach(acc => { if(!acc || !acc.date) return; let [y, m, d] = acc.date.split('-'); if( (yFilter === 'all' || y === yFilter) && (mFilter === 'all' || m === mFilter) ) totalAcc += acc.amount; }); for (let monthKey in cvMonthlyStats) { let [y, m] = monthKey.split('-'); if( (yFilter === 'all' || y === yFilter) && (mFilter === 'all' || m === mFilter) ) { totalCV += cvMonthlyStats[monthKey].cv || 0; totalImport += cvMonthlyStats[monthKey].importAmt || 0; } } document.getElementById('sumCV').innerText = new Intl.NumberFormat('en-US').format(totalCV) + ' Cv'; document.getElementById('sumAcc').innerText = formatMoney(totalAcc); document.getElementById('sumImport').innerText = formatMoney(totalImport); document.getElementById('sumRemain').innerText = formatMoney(totalAcc - totalImport); }
 
 function setupCustomAutocomplete() {
     const phoneInput = document.getElementById('custPhone'); const phoneBox = document.getElementById('phoneSuggestions'); const nameInput = document.getElementById('custName'); const nameBox = document.getElementById('nameSuggestions');
@@ -1335,13 +1346,13 @@ function setupCustomAutocomplete() {
         
         const matches = type === 'phone' 
             ? customerKeys.filter(phone => phone.includes(val)).slice(0, 5) 
-            : customerKeys.filter(phone => customers[phone].name && removeAccents(customers[phone].name).includes(val)).slice(0, 5);
+            : customerKeys.filter(phone => customers[phone] && customers[phone].name && removeAccents(customers[phone].name).includes(val)).slice(0, 5);
             
         if (matches.length > 0) {
             matches.forEach(phone => {
                 const c = customers[phone]; const div = document.createElement('div'); div.className = 'suggestion-item';
-                div.innerHTML = type === 'phone' ? `<b>${phone}</b> - <span class="text-xs text-slate-500">${c.name}</span>` : `<b>${c.name}</b> - <span class="text-xs text-slate-500">${phone}</span>`;
-                div.onclick = () => { document.getElementById('custPhone').value = phone; document.getElementById('custName').value = c.name; document.getElementById('custAddr').value = c.address || ''; boxElement.classList.remove('active'); };
+                div.innerHTML = type === 'phone' ? `<b>${phone}</b> - <span class="text-xs text-slate-500">${c.name || ''}</span>` : `<b>${c.name || ''}</b> - <span class="text-xs text-slate-500">${phone}</span>`;
+                div.onclick = () => { document.getElementById('custPhone').value = phone; document.getElementById('custName').value = c.name || ''; document.getElementById('custAddr').value = c.address || ''; boxElement.classList.remove('active'); };
                 boxElement.appendChild(div);
             }); boxElement.classList.add('active');
         } else { boxElement.classList.remove('active'); }
@@ -1354,7 +1365,7 @@ function setupCustomAutocomplete() {
     function handleProductSearch(input) {
         const val = removeAccents(input.value); const box = input.nextElementSibling; box.innerHTML = '';
         if (!val) return box.classList.remove('active');
-        const matches = inventory.filter(p => removeAccents(p.name).includes(val)).slice(0, 5);
+        const matches = inventory.filter(p => p && p.name && removeAccents(p.name).includes(val)).slice(0, 5);
         if (matches.length > 0) {
             matches.forEach(p => {
                 const div = document.createElement('div'); div.className = 'suggestion-item'; div.innerHTML = `<b>${p.name}</b> <br> <span class="text-[10px] text-[#EE6457]">Kho: ${p.qty} | Giá: ${formatMoney(p.price)}</span>`;
@@ -1378,13 +1389,14 @@ function checkAndShowEvents() {
 
     for (const phone in customers) {
         const c = customers[phone];
+        if (!c) continue;
         
         const b = parseDateString(c.birthday);
         if (b && b.m === currentMonth) { 
             let age = currentYear - b.y;
             if(isNaN(age) || age < 0) age = '?';
             events.push({ 
-                type: 'birthday', name: c.name, phone: phone, date: `${String(b.d).padStart(2,'0')}/${String(b.m).padStart(2,'0')}`, 
+                type: 'birthday', name: c.name || 'Khách', phone: phone, date: `${String(b.d).padStart(2,'0')}/${String(b.m).padStart(2,'0')}`, 
                 number: age, sortDay: b.d, isToday: (b.d === currentDay) 
             }); 
         }
@@ -1395,7 +1407,7 @@ function checkAndShowEvents() {
             if(isNaN(years) || years < 0) years = '?';
             if (years >= 1 || years === '?') {
                 events.push({ 
-                    type: 'anniversary', name: c.name, phone: phone, date: `${String(a.d).padStart(2,'0')}/${String(a.m).padStart(2,'0')}`, 
+                    type: 'anniversary', name: c.name || 'Khách', phone: phone, date: `${String(a.d).padStart(2,'0')}/${String(a.m).padStart(2,'0')}`, 
                     number: years, sortDay: a.d, isToday: (a.d === currentDay) 
                 }); 
             } 
@@ -1566,7 +1578,6 @@ function handleSignOut() {
 }
 
 function openProfileModal() {
-    // Thêm dòng này: Tải lại dữ liệu mới nhất trước khi mở Modal
     if (currentUser) {
         loadUserData(currentUser);
     }
@@ -1581,11 +1592,9 @@ function openProfileModal() {
     document.getElementById('settingsMenu').classList.add('hidden');
 }
 
-// 2. Hàm Tải dữ liệu người dùng (Đã cập nhật cho giao diện mới)
 async function loadUserData(user) {
     if (!user) return;
     
-    // Đổ dữ liệu cơ bản từ Auth ra UI
     document.getElementById('profileEmail').value = user.email || '';
     document.getElementById('profileDisplayName').value = user.displayName || '';
     document.getElementById('displayProfileName').innerText = user.displayName || 'Chưa cập nhật tên';
@@ -1594,7 +1603,6 @@ async function loadUserData(user) {
         document.getElementById('profileAvatarPreview').src = user.photoURL;
     }
 
-    // Lấy dữ liệu bổ sung từ Realtime Database
     try {
         const userRef = ref(db, `SunsetShopData/Users/${user.uid}`);
         const snapshot = await get(userRef);
@@ -1602,24 +1610,21 @@ async function loadUserData(user) {
             const data = snapshot.val();
             document.getElementById('profilePhone').value = data.phone || '';
             
-            // Cập nhật chức vụ hiển thị
             const roleText = (data.role === 'admin') ? 'Quản Trị Viên' : 'Nhân Viên';
             document.getElementById('displayProfileRole').innerText = roleText;
             
-            // Thay thế khối if(data.birthday) và if(data.joinDate) bằng đoạn này:
-if (data.birthday) {
-    // Chuyển đổi an toàn phòng trường hợp data cũ đang lưu là DD/MM/YYYY
-    document.getElementById('profileBirthday').value = data.birthday.includes('/') 
-        ? data.birthday.split('/').reverse().join('-') 
-        : data.birthday;
-}
-if (data.joinDate) {
-    const formattedJoinDate = data.joinDate.includes('/') 
-        ? data.joinDate.split('/').reverse().join('-') 
-        : data.joinDate;
-    document.getElementById('profileJoinDate').value = formattedJoinDate;
-    calculateWorkDuration(formattedJoinDate);
-}
+            if (data.birthday) {
+                document.getElementById('profileBirthday').value = data.birthday.includes('/') 
+                    ? data.birthday.split('/').reverse().join('-') 
+                    : data.birthday;
+            }
+            if (data.joinDate) {
+                const formattedJoinDate = data.joinDate.includes('/') 
+                    ? data.joinDate.split('/').reverse().join('-') 
+                    : data.joinDate;
+                document.getElementById('profileJoinDate').value = formattedJoinDate;
+                calculateWorkDuration(formattedJoinDate);
+            }
 
         }
     } catch (error) {
@@ -1627,8 +1632,6 @@ if (data.joinDate) {
     }
 }
 
-// Hàm tính số ngày làm việc
-// Hàm tính số ngày làm việc
 function calculateWorkDuration(joinDateStr) {
     if (!joinDateStr || joinDateStr.length < 8) {
         document.getElementById('displayWorkDuration').innerText = `0 Ngày`;
@@ -1636,7 +1639,6 @@ function calculateWorkDuration(joinDateStr) {
     }
     
     let joinDate;
-    // Xử lý định dạng DD/MM/YYYY hoặc YYYY-MM-DD
     if(joinDateStr.includes('/')) {
         const parts = joinDateStr.split('/');
         if (parts.length === 3 && parts[2].length >= 4) {
@@ -1661,10 +1663,8 @@ function calculateWorkDuration(joinDateStr) {
     }
 }
 
-
 let cropper = null;
 
-// Xử lý chọn ảnh & Mở modal cắt ảnh
 function handleAvatarSelect(event) {
     const file = event.target.files[0];
     if (file) {
@@ -1681,7 +1681,7 @@ function handleAvatarSelect(event) {
                 
                 if (cropper) cropper.destroy();
                 cropper = new Cropper(document.getElementById('cropImage'), {
-                    aspectRatio: 1, // Buộc cắt theo hình vuông (Avatar)
+                    aspectRatio: 1,
                     viewMode: 1,
                     autoCropArea: 1,
                     dragMode: 'move',
@@ -1691,10 +1691,9 @@ function handleAvatarSelect(event) {
         };
         reader.readAsDataURL(file);
     }
-    event.target.value = ''; // Reset để chọn lại cùng file nếu cần
+    event.target.value = ''; 
 }
 
-// Hủy cắt ảnh
 function cancelCrop() {
     const cropModal = document.getElementById('cropModal');
     cropModal.classList.add('opacity-0');
@@ -1706,7 +1705,6 @@ function cancelCrop() {
     }, 300);
 }
 
-// Xác nhận cắt ảnh
 function confirmCrop() {
     if (!cropper) return;
     
@@ -1725,63 +1723,53 @@ function confirmCrop() {
     }, 'image/jpeg', 0.85);
 }
 
-// 4. Hàm Lưu hồ sơ (Đã fix lỗi đồng bộ và bóc tách tiến trình)
 async function saveUserProfile() {
     if (!currentUser) return showToast("Vui lòng đăng nhập!");
 
     const btnSave = document.getElementById('btnSaveProfile');
     const originalText = btnSave.innerHTML;
     
-    // Hiệu ứng loading
     btnSave.disabled = true;
     btnSave.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Đang lưu...';
 
     try {
-        // 1. Lấy dữ liệu từ các ô nhập
         const displayName = document.getElementById('profileDisplayName').value.trim();
         const phone = document.getElementById('profilePhone').value.trim();
         const birthday = document.getElementById('profileBirthday').value;
         const joinDate = document.getElementById('profileJoinDate').value;
         
-        let photoURL = currentUser.photoURL; // Mặc định dùng ảnh cũ
+        let photoURL = currentUser.photoURL;
 
-        // 2. XỬ LÝ ẢNH (Chỉ làm nếu bạn đã chọn ảnh mới)
         if (selectedAvatarFile) {
             try {
-                // Thử upload, nếu dính lỗi "Nâng cấp gói" nó sẽ nhảy vào catch(imgErr) bên dưới
                 const fileRef = storageRef(storage, `avatars/${currentUser.uid}`);
                 await uploadBytes(fileRef, selectedAvatarFile);
                 photoURL = await getDownloadURL(fileRef);
             } catch (imgErr) {
                 console.warn("Lỗi Storage (Do chưa lên gói trả phí):", imgErr.message);
-                // Thông báo nhẹ cho người dùng biết lỗi ảnh, nhưng vẫn chạy tiếp để lưu chữ
                 showToast("Lưu ảnh thất bại (Do gói Firebase), nhưng thông tin khác vẫn sẽ được lưu.");
             }
         }
 
-        // 3. CẬP NHẬT PROFILE AUTH (Tên hiển thị và Ảnh)
         await updateProfile(currentUser, { displayName, photoURL });
 
-        // 4. ĐỒNG BỘ VÀO DATABASE (Đây là phần quan trọng nhất - HOÀN TOÀN MIỄN PHÍ)
         const currentRoleText = document.getElementById('displayProfileRole').innerText;
         const roleSave = (currentRoleText === 'Quản Trị Viên') ? 'admin' : 'employee';
 
         const userUpdates = {
-            name: displayName,         // Đồng bộ tên cho mục hiển thị
+            name: displayName,
             displayName: displayName,
             phone: phone,
             birthday: birthday,
             joinDate: joinDate,
             email: currentUser.email,
             role: roleSave,
-            photoURL: photoURL,        // Lưu link ảnh (nếu có)
+            photoURL: photoURL,
             lastUpdated: new Date().toISOString()
         };
 
-        // Dùng update để chỉ ghi đè các trường này, giữ nguyên các trường khác trong DB
         await update(ref(db, `SunsetShopData/Users/${currentUser.uid}`), userUpdates);
 
-        // 5. CẬP NHẬT GIAO DIỆN NGAY LẬP TỨC (Không cần load lại trang)
         document.getElementById('displayProfileName').innerText = displayName || 'Chưa cập nhật';
         if (photoURL) {
             document.getElementById('profileAvatarPreview').src = photoURL;
@@ -1789,7 +1777,7 @@ async function saveUserProfile() {
         if (joinDate) calculateWorkDuration(joinDate);
 
         showCustomAlert("Hồ sơ đã được đồng bộ thành công!", "success");
-        selectedAvatarFile = null; // Xóa file đã chọn sau khi lưu xong
+        selectedAvatarFile = null; 
         closeProfileModal();
 
     } catch (error) {
@@ -1801,14 +1789,12 @@ async function saveUserProfile() {
     }
 }
 
-// 5. Hàm đóng Modal
 function closeProfileModal() {
     const modal = document.getElementById('profileModal');
     modal.classList.add('opacity-0');
     modal.querySelector('div').classList.replace('scale-100', 'scale-95');
     setTimeout(() => modal.classList.add('hidden'), 300);
 }
-
 
 // ==============================================================
 // GẮN TẤT CẢ CÁC HÀM VÀO WINDOW CHO HTML
