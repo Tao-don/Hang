@@ -235,6 +235,8 @@ function syncData(updates = null) {
     }
 }
 
+let unsubscribeDB = null; // Biến lưu trữ luồng kết nối
+
 function initDataSync() {
     if (isOfflineMode) {
         console.log("ĐANG CHẠY CHẾ ĐỘ OFFLINE - Tải dữ liệu từ LocalStorage");
@@ -243,7 +245,13 @@ function initDataSync() {
         return;
     }
 
-    onValue(storeRef, (snapshot) => {
+    // RẤT QUAN TRỌNG: Hủy luồng lắng nghe cũ nếu có trước khi mở luồng mới
+    if (unsubscribeDB) {
+        unsubscribeDB();
+    }
+
+    // Mở luồng lắng nghe mới và lưu lại hàm hủy vào unsubscribeDB
+    unsubscribeDB = onValue(storeRef, (snapshot) => {
         const data = snapshot.val() || {};
         let rawOrders = data.v11_orders || {};
         
@@ -266,37 +274,64 @@ function initDataSync() {
     });
 }
 
-let pendingRender = false;
+
+let pendingRenderTarget = { crm: false, inventory: false, cv: false };
 
 function refreshAllViews() {
-    const activeTag = document.activeElement ? document.activeElement.tagName : '';
-    const isInputActive = activeTag === 'INPUT' || activeTag === 'TEXTAREA' || activeTag === 'SELECT';
+    const activeEl = document.activeElement;
 
-    if (isInputActive) {
-        pendingRender = true;
-        return; 
+    // Phân vùng kiểm tra: Chỉ chặn nếu đang gõ trực tiếp vào các ô input BÊN TRONG BẢNG CỤ THỂ
+    const isEditingInventory = activeEl && document.getElementById('inventoryTableBody')?.contains(activeEl);
+    const isEditingCRM = activeEl && document.getElementById('customerTableBody')?.contains(activeEl);
+    const isEditingCV = activeEl && document.getElementById('cvAccTableBody')?.contains(activeEl);
+
+    // 1. Tab Đơn Hàng: Render thoải mái (Form thêm đơn ở trên không bị ảnh hưởng khi bảng ở dưới load lại)
+    if (!document.getElementById('view-orders').classList.contains('hidden')) {
+        renderTable(); 
+        checkAndShowEvents();
     }
 
-    if(!document.getElementById('view-orders').classList.contains('hidden')) renderTable();
-    if(!document.getElementById('view-customers').classList.contains('hidden')) renderCustomerCRM();
-    if(!document.getElementById('view-inventory').classList.contains('hidden')) renderInventory();
-    if(!document.getElementById('view-analytics').classList.contains('hidden')) renderAnalytics();
-    if(!document.getElementById('view-cv').classList.contains('hidden')) renderAllCV();
-    
-    checkAndShowEvents();
-    pendingRender = false; 
+    // 2. Tab Khách hàng
+    if (!document.getElementById('view-customers').classList.contains('hidden')) {
+        if (!isEditingCRM) renderCustomerCRM();
+        else pendingRenderTarget.crm = true;
+    }
+
+    // 3. Tab Kho
+    if (!document.getElementById('view-inventory').classList.contains('hidden')) {
+        if (!isEditingInventory) renderInventory();
+        else pendingRenderTarget.inventory = true;
+    }
+
+    // 4. Tab Báo Cáo: Render thoải mái
+    if (!document.getElementById('view-analytics').classList.contains('hidden')) {
+        renderAnalytics();
+    }
+
+    // 5. Tab CV
+    if (!document.getElementById('view-cv').classList.contains('hidden')) {
+        if (!isEditingCV) renderCVAccumulations();
+        else pendingRenderTarget.cv = true;
+        renderCVSummary(); 
+        renderCVMonthlyStats();
+    }
 }
 
+// Lắng nghe khi người dùng gõ xong và click chuột ra ngoài (focusout)
 document.addEventListener('focusout', (e) => {
-    if (pendingRender) {
-        setTimeout(() => {
-            const activeTag = document.activeElement ? document.activeElement.tagName : '';
-            if (activeTag !== 'INPUT' && activeTag !== 'TEXTAREA' && activeTag !== 'SELECT') {
-                refreshAllViews();
-            }
-        }, 150);
-    }
+    setTimeout(() => {
+        const activeEl = document.activeElement;
+        const isEditingInventory = activeEl && document.getElementById('inventoryTableBody')?.contains(activeEl);
+        const isEditingCRM = activeEl && document.getElementById('customerTableBody')?.contains(activeEl);
+        const isEditingCV = activeEl && document.getElementById('cvAccTableBody')?.contains(activeEl);
+
+        // Vẽ lại bảng nếu trước đó bị nghẽn và giờ đã gõ xong
+        if (pendingRenderTarget.crm && !isEditingCRM) { renderCustomerCRM(); pendingRenderTarget.crm = false; }
+        if (pendingRenderTarget.inventory && !isEditingInventory) { renderInventory(); pendingRenderTarget.inventory = false; }
+        if (pendingRenderTarget.cv && !isEditingCV) { renderCVAccumulations(); pendingRenderTarget.cv = false; }
+    }, 150);
 });
+
 
 // ==========================================
 // CÁC HÀM BACKUP & RESTORE
@@ -1407,7 +1442,6 @@ function checkAndShowEvents() {
 document.addEventListener('input', e => { if (e.target && e.target.classList.contains('crm-textarea')) { const target = e.target; requestAnimationFrame(() => { target.style.height = 'auto'; target.style.height = target.scrollHeight + 'px'; }); } });
 let searchOrderTimeout; function debouncedRenderOrder() { clearTimeout(searchOrderTimeout); searchOrderTimeout = setTimeout(() => { renderTable(); }, 150); }
 let searchCustomerTimeout; function debouncedRenderCustomerCRM() { clearTimeout(searchCustomerTimeout); searchCustomerTimeout = setTimeout(() => { renderCustomerCRM(); }, 150); }
-document.addEventListener("visibilitychange", () => { if (document.visibilityState === 'visible') initDataSync(); });
 
 // ==========================================
 // HỆ THỐNG AUTHENTICATION & PROFILE
@@ -1691,60 +1725,76 @@ function confirmCrop() {
     }, 'image/jpeg', 0.85);
 }
 
-
-// 4. Hàm Lưu hồ sơ (Đã cập nhật đồng bộ UI tức thì)
+// 4. Hàm Lưu hồ sơ (Đã fix lỗi đồng bộ và bóc tách tiến trình)
 async function saveUserProfile() {
     if (!currentUser) return showToast("Vui lòng đăng nhập!");
 
     const btnSave = document.getElementById('btnSaveProfile');
     const originalText = btnSave.innerHTML;
+    
+    // Hiệu ứng loading
     btnSave.disabled = true;
-    btnSave.innerHTML = '<i class="fa-solid fa-spinner fa-spin text-lg"></i> Đang lưu...';
+    btnSave.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Đang lưu...';
 
     try {
-        let photoURL = currentUser.photoURL;
-
-        // Nếu có chọn ảnh mới -> Tải lên Storage
-        if (selectedAvatarFile) {
-            const fileRef = storageRef(storage, `avatars/${currentUser.uid}`);
-            await uploadBytes(fileRef, selectedAvatarFile);
-            photoURL = await getDownloadURL(fileRef);
-        }
-
+        // 1. Lấy dữ liệu từ các ô nhập
         const displayName = document.getElementById('profileDisplayName').value.trim();
         const phone = document.getElementById('profilePhone').value.trim();
         const birthday = document.getElementById('profileBirthday').value;
         const joinDate = document.getElementById('profileJoinDate').value;
+        
+        let photoURL = currentUser.photoURL; // Mặc định dùng ảnh cũ
 
-        // Cập nhật Profile Auth
+        // 2. XỬ LÝ ẢNH (Chỉ làm nếu bạn đã chọn ảnh mới)
+        if (selectedAvatarFile) {
+            try {
+                // Thử upload, nếu dính lỗi "Nâng cấp gói" nó sẽ nhảy vào catch(imgErr) bên dưới
+                const fileRef = storageRef(storage, `avatars/${currentUser.uid}`);
+                await uploadBytes(fileRef, selectedAvatarFile);
+                photoURL = await getDownloadURL(fileRef);
+            } catch (imgErr) {
+                console.warn("Lỗi Storage (Do chưa lên gói trả phí):", imgErr.message);
+                // Thông báo nhẹ cho người dùng biết lỗi ảnh, nhưng vẫn chạy tiếp để lưu chữ
+                showToast("Lưu ảnh thất bại (Do gói Firebase), nhưng thông tin khác vẫn sẽ được lưu.");
+            }
+        }
+
+        // 3. CẬP NHẬT PROFILE AUTH (Tên hiển thị và Ảnh)
         await updateProfile(currentUser, { displayName, photoURL });
 
-        // Giữ nguyên role cũ, tránh ghi đè quyền admin thành employee
+        // 4. ĐỒNG BỘ VÀO DATABASE (Đây là phần quan trọng nhất - HOÀN TOÀN MIỄN PHÍ)
         const currentRoleText = document.getElementById('displayProfileRole').innerText;
         const roleSave = (currentRoleText === 'Quản Trị Viên') ? 'admin' : 'employee';
 
-        // Cập nhật Database
-        await set(ref(db, `SunsetShopData/Users/${currentUser.uid}`), {
-            displayName,
-            phone,
-            birthday,
-            joinDate,
+        const userUpdates = {
+            name: displayName,         // Đồng bộ tên cho mục hiển thị
+            displayName: displayName,
+            phone: phone,
+            birthday: birthday,
+            joinDate: joinDate,
             email: currentUser.email,
             role: roleSave,
+            photoURL: photoURL,        // Lưu link ảnh (nếu có)
             lastUpdated: new Date().toISOString()
-        });
+        };
 
-        // ĐỒNG BỘ UI NGAY LẬP TỨC: Cập nhật tên và tính lại ngày ở bảng bên trái
-        document.getElementById('displayProfileName').innerText = displayName || 'Chưa cập nhật tên';
-        if (photoURL) document.getElementById('profileAvatarPreview').src = photoURL;
+        // Dùng update để chỉ ghi đè các trường này, giữ nguyên các trường khác trong DB
+        await update(ref(db, `SunsetShopData/Users/${currentUser.uid}`), userUpdates);
+
+        // 5. CẬP NHẬT GIAO DIỆN NGAY LẬP TỨC (Không cần load lại trang)
+        document.getElementById('displayProfileName').innerText = displayName || 'Chưa cập nhật';
+        if (photoURL) {
+            document.getElementById('profileAvatarPreview').src = photoURL;
+        }
         if (joinDate) calculateWorkDuration(joinDate);
 
-        showCustomAlert("Hồ sơ của bạn đã được cập nhật thành công!", "success");
-        selectedAvatarFile = null;
+        showCustomAlert("Hồ sơ đã được đồng bộ thành công!", "success");
+        selectedAvatarFile = null; // Xóa file đã chọn sau khi lưu xong
         closeProfileModal();
+
     } catch (error) {
-        console.error(error);
-        showCustomAlert("Lỗi khi lưu: " + error.message, "error");
+        console.error("Lỗi đồng bộ hồ sơ:", error);
+        showCustomAlert("Lỗi hệ thống: " + error.message, "error");
     } finally {
         btnSave.disabled = false;
         btnSave.innerHTML = originalText;
