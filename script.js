@@ -1547,93 +1547,115 @@ function openProfileModal() {
     document.getElementById('settingsMenu').classList.add('hidden');
 }
 
-function closeProfileModal() {
-    const modal = document.getElementById('profileModal');
-    modal.classList.add('opacity-0');
-    modal.querySelector('div').classList.remove('scale-100');
-    modal.querySelector('div').classList.add('scale-95');
-    setTimeout(() => modal.classList.add('hidden'), 300);
-    selectedAvatarFile = null;
-}
+// 1. Khởi tạo Flatpickr khi trang web tải xong
+document.addEventListener('DOMContentLoaded', () => {
+    flatpickr(".datepicker-profile", {
+        locale: "vn",
+        dateFormat: "d/m/Y",
+        allowInput: true,
+        monthSelectorType: 'dropdown',
+        yearSelectorType: 'dropdown',
+        minDate: "1980-01-01",
+        maxDate: "2080-12-31"
+    });
+});
 
+// 2. Hàm Tải dữ liệu người dùng
 async function loadUserData(user) {
-    document.getElementById('profileEmail').value = user.email || '';
-    document.getElementById('profileName').value = user.displayName || '';
-    document.getElementById('profileAvatarPreview').src = user.photoURL || `https://ui-avatars.com/api/?name=${user.email.charAt(0)}&background=034C5F&color=fff`;
-
-    const userRef = ref(db, `SunsetShopData/Users/${user.uid}`);
-    const snapshot = await get(userRef);
-    if (snapshot.exists()) {
-        const data = snapshot.val();
-        if(data.name) document.getElementById('profileName').value = data.name;
-        document.getElementById('profilePhone').value = data.phone || '';
-        
-        // Đã gỡ bỏ Flatpickr gây lỗi. Gán trực tiếp data vào thẻ <input type="date"> chuẩn HTML5
-        if (data.dob) {
-            document.getElementById('profileDOB').value = data.dob;
-        }
-
-        const joinDateVal = data.joinDate || getLocalDateString();
-        document.getElementById('profileJoinDate').value = joinDateVal;
-    }
-}
-
-async function saveUserProfile() {
-    if (!currentUser) return;
-    const btnSave = document.getElementById('btnSaveProfile');
+    if (!user) return;
     
-    // Đổi trạng thái nút thành Đang xử lý và khóa không cho bấm 2 lần
-    btnSave.innerHTML = '<i class="fa-solid fa-spinner fa-spin text-lg mr-2"></i>ĐANG LƯU...';
-    btnSave.classList.add('opacity-80', 'pointer-events-none');
+    // Đổ dữ liệu cơ bản từ Auth
+    document.getElementById('profileEmail').value = user.email || '';
+    document.getElementById('profileDisplayName').value = user.displayName || '';
+    if (user.photoURL) {
+        document.getElementById('profileAvatarPreview').src = user.photoURL;
+    }
 
+    // Đổ dữ liệu bổ sung từ Realtime Database
     try {
-        const name = document.getElementById('profileName').value.trim();
-        const phone = document.getElementById('profilePhone').value.trim();
-        const dob = document.getElementById('profileDOB').value;
-        const joinDate = document.getElementById('profileJoinDate').value; 
-        
-        let photoURL = currentUser.photoURL || ""; 
-
-        // Upload ảnh lên Firebase Storage nếu có
-        if (selectedAvatarFile) {
-            const avatarRef = storageRef(storage, `Avatars/${currentUser.uid}_${Date.now()}`);
-            await uploadBytes(avatarRef, selectedAvatarFile);
-            photoURL = await getDownloadURL(avatarRef);
+        const userRef = ref(db, `SunsetShopData/Users/${user.uid}`);
+        const snapshot = await get(userRef);
+        if (snapshot.exists()) {
+            const data = snapshot.val();
+            document.getElementById('profilePhone').value = data.phone || '';
+            
+            // Cập nhật ngày cho Flatpickr
+            if (data.birthday) document.getElementById('profileBirthday')._flatpickr.setDate(data.birthday);
+            if (data.joinDate) document.getElementById('profileJoinDate')._flatpickr.setDate(data.joinDate);
         }
-
-        // Cập nhật Firebase Auth
-        await updateProfile(currentUser, { displayName: name, photoURL: photoURL });
-
-        // Cập nhật Firebase Database
-        await update(ref(db, `SunsetShopData/Users/${currentUser.uid}`), {
-            name: name, 
-            phone: phone, 
-            dob: dob, 
-            joinDate: joinDate,
-            photoURL: photoURL
-        });
-
-        showToast("Đã cập nhật hồ sơ thành công!");
-        closeProfileModal();
     } catch (error) {
-        console.error("Lỗi khi lưu profile:", error);
-        showCustomAlert("Lỗi cập nhật: " + error.message, "error");
-    } finally {
-        // Nhả nút bấm trở về trạng thái bình thường
-        btnSave.innerHTML = '<i class="fa-solid fa-floppy-disk text-lg"></i> LƯU THAY ĐỔI';
-        btnSave.classList.remove('opacity-80', 'pointer-events-none');
+        console.error("Lỗi tải thông tin chi tiết:", error);
     }
 }
 
-
+// 3. Hàm Xử lý chọn ảnh (Xem trước)
 function handleAvatarSelect(event) {
     const file = event.target.files[0];
     if (file) {
         selectedAvatarFile = file;
         const reader = new FileReader();
-        reader.onload = (e) => document.getElementById('profileAvatarPreview').src = e.target.result;
+        reader.onload = (e) => {
+            document.getElementById('profileAvatarPreview').src = e.target.result;
+        };
         reader.readAsDataURL(file);
     }
+}
+
+// 4. Hàm Lưu hồ sơ
+async function saveUserProfile() {
+    if (!currentUser) return showToast("Vui lòng đăng nhập!");
+
+    const btnSave = document.getElementById('btnSaveProfile');
+    const originalText = btnSave.innerHTML;
+    btnSave.disabled = true;
+    btnSave.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Đang lưu...';
+
+    try {
+        let photoURL = currentUser.photoURL;
+
+        // Nếu có chọn ảnh mới -> Tải lên Storage
+        if (selectedAvatarFile) {
+            const fileRef = storageRef(storage, `avatars/${currentUser.uid}`);
+            await uploadBytes(fileRef, selectedAvatarFile);
+            photoURL = await getDownloadURL(fileRef);
+        }
+
+        const displayName = document.getElementById('profileDisplayName').value.trim();
+        const phone = document.getElementById('profilePhone').value.trim();
+        const birthday = document.getElementById('profileBirthday').value;
+        const joinDate = document.getElementById('profileJoinDate').value;
+
+        // Cập nhật Profile Auth
+        await updateProfile(currentUser, { displayName, photoURL });
+
+        // Cập nhật Database
+        await set(ref(db, `SunsetShopData/Users/${currentUser.uid}`), {
+            displayName,
+            phone,
+            birthday,
+            joinDate,
+            email: currentUser.email,
+            lastUpdated: new Date().toISOString()
+        });
+
+        showCustomAlert("Hồ sơ của bạn đã được cập nhật thành công!", "success");
+        selectedAvatarFile = null;
+        closeProfileModal();
+    } catch (error) {
+        console.error(error);
+        showCustomAlert("Lỗi khi lưu: " + error.message, "error");
+    } finally {
+        btnSave.disabled = false;
+        btnSave.innerHTML = originalText;
+    }
+}
+
+// 5. Hàm đóng/mở Modal
+function closeProfileModal() {
+    const modal = document.getElementById('profileModal');
+    modal.classList.add('opacity-0');
+    modal.querySelector('div').classList.replace('scale-100', 'scale-95');
+    setTimeout(() => modal.classList.add('hidden'), 300);
 }
 
 
