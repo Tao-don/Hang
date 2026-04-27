@@ -1636,46 +1636,7 @@ function handleAvatarSelect(event) {
     }
 }
 
-async function saveUserProfile() {
-    if (!currentUser) return;
-    const btnSave = document.getElementById('btnSaveProfile');
-    btnSave.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i>ĐANG LƯU...';
-    btnSave.disabled = true;
 
-    try {
-        const name = document.getElementById('profileName').value.trim();
-        const phone = document.getElementById('profilePhone').value.trim();
-        const dob = document.getElementById('profileDOB').value;
-        const joinDate = document.getElementById('profileJoinDate').value; 
-        
-        let photoURL = currentUser.photoURL || ""; 
-
-        if (selectedAvatarFile) {
-            const avatarRef = storageRef(storage, `Avatars/${currentUser.uid}_${Date.now()}`);
-            await uploadBytes(avatarRef, selectedAvatarFile);
-            photoURL = await getDownloadURL(avatarRef);
-        }
-
-        await updateProfile(currentUser, { displayName: name, photoURL: photoURL });
-
-        await update(ref(db, `SunsetShopData/Users/${currentUser.uid}`), {
-            name: name, 
-            phone: phone, 
-            dob: dob, 
-            joinDate: joinDate,
-            photoURL: photoURL
-        });
-
-        showToast("Đã cập nhật hồ sơ thành công!");
-        closeProfileModal();
-    } catch (error) {
-        console.error("Lỗi khi lưu profile:", error);
-        showCustomAlert("Lỗi cập nhật: " + error.message, "error");
-    } finally {
-        btnSave.innerHTML = '<i class="fa-solid fa-floppy-disk text-lg mr-2"></i> LƯU THAY ĐỔI';
-        btnSave.disabled = false;
-    }
-}
 
 
 // ==============================================================
