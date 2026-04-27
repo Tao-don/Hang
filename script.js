@@ -1426,6 +1426,7 @@ onAuthStateChanged(auth, async (user) => {
         
         closeAuthModal();
         await loadUserData(user);
+        initDataSync();
     } else {
         btnLogin.classList.remove('hidden');
         btnProfile.classList.add('hidden');
@@ -1529,9 +1530,18 @@ function handleSignOut() {
 }
 
 function openProfileModal() {
+    // Thêm dòng này: Tải lại dữ liệu mới nhất trước khi mở Modal
+    if (currentUser) {
+        loadUserData(currentUser);
+    }
+
     const modal = document.getElementById('profileModal');
     modal.classList.remove('hidden');
-    setTimeout(() => { modal.classList.remove('opacity-0'); modal.querySelector('div').classList.remove('scale-95'); modal.querySelector('div').classList.add('scale-100'); }, 10);
+    setTimeout(() => { 
+        modal.classList.remove('opacity-0'); 
+        modal.querySelector('div').classList.remove('scale-95'); 
+        modal.querySelector('div').classList.add('scale-100'); 
+    }, 10);
     document.getElementById('settingsMenu').classList.add('hidden');
 }
 
@@ -1555,8 +1565,19 @@ async function loadUserData(user) {
         const data = snapshot.val();
         if(data.name) document.getElementById('profileName').value = data.name;
         document.getElementById('profilePhone').value = data.phone || '';
-        document.getElementById('profileDOB').value = data.dob || '';
-        document.getElementById('profileJoinDate').value = data.joinDate || getLocalDateString();
+        
+        // --- SỬA LỖI FLATPICKR KHÔNG HIỂN THỊ NGÀY THÁNG ---
+        const dobEl = document.getElementById('profileDOB');
+        if (data.dob) {
+            dobEl.value = data.dob;
+            // Ép thư viện flatpickr hiển thị ngày lên giao diện
+            if (dobEl._flatpickr) dobEl._flatpickr.setDate(data.dob);
+        }
+
+        const joinDateEl = document.getElementById('profileJoinDate');
+        const joinDateVal = data.joinDate || getLocalDateString();
+        joinDateEl.value = joinDateVal;
+        if (joinDateEl._flatpickr) joinDateEl._flatpickr.setDate(joinDateVal);
     }
 }
 
@@ -1615,8 +1636,11 @@ flatpickr(".flatpickr-profile", {
     locale: "vn",
     dateFormat: "Y-m-d", 
     altInput: true,
-    altFormat: "d/m/Y",  
+    altFormat: "d/m/Y",
+    minDate: "1950-01-01", // Thêm dòng này để cho phép chọn năm từ 1950
+    maxDate: "2060-12-31"  // Thêm dòng này
 });
+
 
 // ==============================================================
 // GẮN TẤT CẢ CÁC HÀM VÀO WINDOW CHO HTML
