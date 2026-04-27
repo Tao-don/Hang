@@ -29,13 +29,19 @@ let currentUser = null;
 let currentAuthMode = 'login'; // 'login', 'register', 'reset'
 let selectedAvatarFile = null;
 
+// Đảm bảo khi trang web tải xong sẽ có sẵn 1 hàng sản phẩm
+document.addEventListener('DOMContentLoaded', () => {
+    const container = document.getElementById('product-list'); 
+    if (container && container.children.length === 0) {
+        addProductRow();
+    }
+});
+
 // Data Reference
 const storeRef = ref(db, 'SunsetShopData/StoreData');
 
 // ==========================================
 // CHẾ ĐỘ THỬ NGHIỆM (OFFLINE MODE)
-// true = Không gửi lên Firebase, lưu tạm trên trình duyệt (F5 không mất)
-// false = Đồng bộ thật lên Firebase
 // ==========================================
 const isOfflineMode = false; 
 
@@ -50,10 +56,9 @@ let revenueChartInstance = null;
 let isLocalAction = false; 
 
 // ==========================================
-// CÁC HÀM TIỆN ÍCH HỖ TRỢ (TÌM KIẾM & NGÀY THÁNG)
+// CÁC HÀM TIỆN ÍCH HỖ TRỢ 
 // ==========================================
 
-// Bỏ dấu tiếng Việt để tìm kiếm thông minh
 function removeAccents(str) {
     if (!str) return '';
     return str.toString().normalize('NFD')
@@ -62,17 +67,16 @@ function removeAccents(str) {
               .toLowerCase().trim();
 }
 
-// Chuyển đổi chuỗi ngày linh hoạt thành Object {y, m, d}
 function parseDateString(dateStr) {
     if (!dateStr) return null;
     if (dateStr.includes('-')) {
         const parts = dateStr.split('-');
-        if (parts[0].length === 4) return { y: parseInt(parts[0]), m: parseInt(parts[1]), d: parseInt(parts[2]) }; // YYYY-MM-DD
-        return { d: parseInt(parts[0]), m: parseInt(parts[1]), y: parseInt(parts[2]) }; // DD-MM-YYYY
+        if (parts[0].length === 4) return { y: parseInt(parts[0]), m: parseInt(parts[1]), d: parseInt(parts[2]) }; 
+        return { d: parseInt(parts[0]), m: parseInt(parts[1]), y: parseInt(parts[2]) }; 
     } else if (dateStr.includes('/')) {
         const parts = dateStr.split('/');
-        if (parts[2].length === 4) return { d: parseInt(parts[0]), m: parseInt(parts[1]), y: parseInt(parts[2]) }; // DD/MM/YYYY
-        return { y: parseInt(parts[0]), m: parseInt(parts[1]), d: parseInt(parts[2]) }; // YYYY/MM/DD
+        if (parts[2].length === 4) return { d: parseInt(parts[0]), m: parseInt(parts[1]), y: parseInt(parts[2]) }; 
+        return { y: parseInt(parts[0]), m: parseInt(parts[1]), d: parseInt(parts[2]) }; 
     }
     return null;
 }
@@ -93,14 +97,13 @@ function parseCurrency(str) {
 function getLocalDateString() {
     const d = new Date();
     const utc = d.getTime() + (d.getTimezoneOffset() * 60000);
-    const vnTime = new Date(utc + (3600000 * 7)); // Cố định GMT+7 (Việt Nam)
+    const vnTime = new Date(utc + (3600000 * 7)); 
     const yyyy = vnTime.getFullYear();
     const mm = String(vnTime.getMonth() + 1).padStart(2, '0');
     const dd = String(vnTime.getDate()).padStart(2, '0');
     return `${yyyy}-${mm}-${dd}`;
 }
 
-// Thêm hàm chuyển đổi ngày sang số để so sánh chính xác tuyệt đối
 function dateToNumber(dateStr) {
     if (!dateStr) return 0;
     let y = 0, m = 0, d = 0;
@@ -217,7 +220,7 @@ function loadFromLocal() {
 
 function syncData(updates = null) {
     saveToLocal(); 
-    if (isOfflineMode) return Promise.resolve(); // Bỏ qua Firebase nếu Offline
+    if (isOfflineMode) return Promise.resolve(); 
 
     if (updates) {
         return update(storeRef, updates).catch(err => showCustomAlert("Lỗi đồng bộ: " + err.message, "error"));
@@ -257,55 +260,43 @@ function initDataSync() {
         cvAccumulations = data.v11_cv_accumulations || [];
         cvMonthlyStats = data.v11_cv_monthly || {};
 
-        saveToLocal(); // Backup ngược lại vào Local
+        saveToLocal(); 
 
         if (!isLocalAction) refreshAllViews();
     });
 }
 
+let pendingRender = false;
+
 function refreshAllViews() {
-    renderTable();
-    renderCustomerCRM();
-    renderInventory();
-    if(!document.getElementById('view-analytics').classList.contains('hidden')) renderAnalytics();
-    if(!document.getElementById('view-cv').classList.contains('hidden')) renderAllCV();
-    checkAndShowEvents();
-}
+    const activeTag = document.activeElement ? document.activeElement.tagName : '';
+    const isInputActive = activeTag === 'INPUT' || activeTag === 'TEXTAREA' || activeTag === 'SELECT';
 
-document.addEventListener('DOMContentLoaded', () => {
-    // 1. GÁN GIÁ TRỊ MẶC ĐỊNH TRƯỚC KHI GỌI RENDER DỮ LIỆU
-    const todayStr = getLocalDateString();
-    
-    // - Thiết lập ngày cho các form nhập liệu
-    if (document.getElementById('orderDate')) document.getElementById('orderDate').value = todayStr;
-    if (document.getElementById('shipDate')) document.getElementById('shipDate').value = todayStr; 
-    if (document.getElementById('cvAccDate')) document.getElementById('cvAccDate').value = todayStr;
-    
-    let d = new Date();
-    let currentMonthStr = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, '0');
-    if (document.getElementById('cvMonthPick')) document.getElementById('cvMonthPick').value = currentMonthStr;
-
-    // - Thiết lập ngày mặc định (Mùng 1 đến Hiện tại) cho bộ lọc Danh sách
-    const listFilterStart = document.getElementById('listFilterStart');
-    const listFilterEnd = document.getElementById('listFilterEnd');
-    if (listFilterStart && listFilterEnd) {
-        const firstDayStr = todayStr.substring(0, 8) + '01'; 
-        listFilterStart.value = firstDayStr;
-        listFilterEnd.value = todayStr;
+    if (isInputActive) {
+        pendingRender = true;
+        return; 
     }
 
-    // 2. KHỞI TẠO VÀ ĐỒNG BỘ DỮ LIỆU 
-    // (Lúc này bộ lọc đã có sẵn dữ liệu ngày để hàm renderTable đọc và hiển thị chính xác ngay lập tức)
-    initDataSync();
+    if(!document.getElementById('view-orders').classList.contains('hidden')) renderTable();
+    if(!document.getElementById('view-customers').classList.contains('hidden')) renderCustomerCRM();
+    if(!document.getElementById('view-inventory').classList.contains('hidden')) renderInventory();
+    if(!document.getElementById('view-analytics').classList.contains('hidden')) renderAnalytics();
+    if(!document.getElementById('view-cv').classList.contains('hidden')) renderAllCV();
+    
+    checkAndShowEvents();
+    pendingRender = false; 
+}
 
-    // 3. Khởi tạo các thành phần UI khác
-    if (typeof autoSetDeliveryDate === 'function') autoSetDeliveryDate(); 
-    setupCustomAutocomplete();
-
-    const productList = document.getElementById('product-list');
-    if (productList && productList.children.length === 0) addProductRow();
+document.addEventListener('focusout', (e) => {
+    if (pendingRender) {
+        setTimeout(() => {
+            const activeTag = document.activeElement ? document.activeElement.tagName : '';
+            if (activeTag !== 'INPUT' && activeTag !== 'TEXTAREA' && activeTag !== 'SELECT') {
+                refreshAllViews();
+            }
+        }, 150);
+    }
 });
-
 
 // ==========================================
 // CÁC HÀM BACKUP & RESTORE
@@ -318,16 +309,12 @@ function backupData() {
     showToast("Đã tải xuống file sao lưu!");
 }
 
-// ==========================================
-// KHÔI PHỤC DỮ LIỆU & ÉP ĐỒNG BỘ FIREBASE
-// ==========================================
 function restoreData(input) {
     const file = input.files[0];
     if (!file) return;
 
     showCustomConfirm("CẢNH BÁO: Toàn bộ dữ liệu trên hệ thống sẽ bị GHI ĐÈ bằng file này. Bạn có chắc chắn muốn tiếp tục?", () => {
         
-        // 1. Hiển thị trạng thái đang xử lý để user không thao tác lung tung
         showToast("Đang đọc file và đồng bộ lên Firebase... Vui lòng đợi!");
         
         const reader = new FileReader();
@@ -335,23 +322,19 @@ function restoreData(input) {
             try {
                 const data = JSON.parse(e.target.result);
                 
-                // 2. Kiểm tra tính toàn vẹn của file (Strict Validation)
                 if (data.orders && Array.isArray(data.orders) && data.customers && typeof data.customers === 'object') {
                     
-                    // Khóa listener của Firebase để tránh UI bị giật/render lại 2 lần
                     isLocalAction = true;
                     
-                    // Gán dữ liệu vào biến Local
                     orders = data.orders;
                     customers = data.customers;
                     inventory = data.inventory || [];
                     cvAccumulations = data.cvAccumulations || [];
                     cvMonthlyStats = data.cvMonthlyStats || {};
                     
-                    // 3. Ép đồng bộ thẳng lên Firebase bằng syncData()
                     syncData().then(() => {
                         refreshAllViews();
-                        isLocalAction = false; // Mở lại listener
+                        isLocalAction = false; 
                         showCustomAlert("Đã khôi phục và lưu dữ liệu lên Firebase thành công!", "success"); 
                     }).catch(err => {
                         isLocalAction = false;
@@ -368,10 +351,8 @@ function restoreData(input) {
         reader.readAsText(file);
     });
     
-    // Reset input để có thể chọn lại cùng 1 file nếu cần
     input.value = ''; 
 }
-
 
 // ==========================================
 // QUẢN LÝ KHO
@@ -392,7 +373,8 @@ function updateInventoryProduct(index, field, value) {
     if(field === 'qty') inventory[index].qty = parseInt(value) || 0;
     else if(field === 'price') inventory[index].price = parseCurrency(value) || 0;
     else inventory[index][field] = value;
-    saveInventory();
+    
+    syncData({ [`v11_inventory/${index}/${field}`]: inventory[index][field] });
 }
 
 function deleteInventoryProduct(index) { 
@@ -432,31 +414,35 @@ function updateQty(btn, change) {
     calculateTotal();
 }
 
-function addProductRow(name = "", price = "", qty = 1) {
-    const container = document.getElementById('product-list');
-    if (!container) return; 
+function addProductRow(name = '', price = '', qty = 1) {
+    const container = document.getElementById('product-list'); 
+    const formattedPrice = price ? new Intl.NumberFormat('en-US').format(price) : '';
+
     const div = document.createElement('div');
-    const formattedPrice = price ? new Intl.NumberFormat('en-US').format(price) : "";
+    div.className = "product-row grid grid-cols-12 gap-2 items-center bg-white p-2 rounded-lg border border-slate-100 shadow-sm";
     
-    div.className = "grid grid-cols-1 sm:grid-cols-[2fr,1fr,auto,auto] gap-2 bg-white p-3 border border-soft-pink rounded-xl items-center shadow-sm product-row";
     div.innerHTML = `
-        <div class="input-group relative">
-            <i class="fa-solid fa-cube input-icon"></i>
-            <input type="text" autocomplete="off" class="form-input p-name" placeholder="Tên SP..." value="${name}">
-            <div class="custom-suggestion-box product-suggestions"></div>
+        <div class="col-span-6 relative">
+            <input type="text" class="form-input text-xs font-bold p-name" placeholder="Tên sản phẩm..." value="${name}">
+            <div class="product-suggestions custom-suggestion-box"></div>
         </div>
-        <div class="input-group">
-            <i class="fa-solid fa-money-bill-1-wave input-icon"></i>
-            <input type="text" inputmode="numeric" class="form-input p-price font-bold text-[#034C5F]" placeholder="Giá (₫)" value="${formattedPrice}" oninput="formatCurrencyInput(this); calculateTotal()">
+        <div class="col-span-3">
+            <input type="text" class="form-input text-xs text-center p-price" placeholder="Giá" value="${formattedPrice}" oninput="formatCurrencyInput(this); calculateTotal()">
         </div>
-        <div class="flex items-center gap-2 bg-[#FDF5F4] p-1 rounded-lg border border-[#F9C4BA]">
-            <button type="button" onclick="updateQty(this, -1)" class="w-8 h-8 flex items-center justify-center text-[#EE6457] font-bold hover:bg-white rounded-md transition-colors">-</button>
-            <input type="number" class="w-10 text-center bg-transparent font-black text-[#034C5F] outline-none p-qty" value="${qty}" onchange="calculateTotal()" min="1">
-            <button type="button" onclick="updateQty(this, 1)" class="w-8 h-8 flex items-center justify-center text-[#034C5F] font-bold hover:bg-white rounded-md transition-colors">+</button>
+        <div class="col-span-2 flex shadow-sm rounded-lg">
+            <button type="button" onclick="updateQty(this, -1)" class="w-8 bg-slate-50 border border-slate-200 border-r-0 rounded-l-lg flex justify-center items-center text-slate-500 hover:bg-slate-200 hover:text-[#EE6457] transition-colors focus:outline-none shrink-0">
+                <i class="fa-solid fa-minus text-[10px]"></i>
+            </button>
+            <input type="number" class="form-input text-xs text-center p-qty !px-0 !rounded-none !shadow-none z-10 w-full [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" value="${qty}" min="1" oninput="calculateTotal()">
+            <button type="button" onclick="updateQty(this, 1)" class="w-8 bg-slate-50 border border-slate-200 border-l-0 rounded-r-lg flex justify-center items-center text-slate-500 hover:bg-slate-200 hover:text-[#034C5F] transition-colors focus:outline-none shrink-0">
+                <i class="fa-solid fa-plus text-[10px]"></i>
+            </button>
         </div>
-        <button type="button" onclick="this.parentElement.remove(); calculateTotal()" class="w-10 h-10 flex items-center justify-center bg-red-50 text-red-500 rounded-xl hover:bg-red-50 hover:text-white transition-all">
-            <i class="fa-solid fa-trash"></i>
-        </button>
+        <div class="col-span-1 text-right">
+            <button type="button" onclick="this.closest('.product-row').remove(); calculateTotal()" class="text-slate-300 hover:text-red-500">
+                <i class="fa-solid fa-circle-xmark"></i>
+            </button>
+        </div>
     `;
     container.appendChild(div);
 }
@@ -471,9 +457,8 @@ function calculateTotal() {
 
     const ship = parseCurrency(document.getElementById('shipFee').value) || 0;
     
-    // Xử lý Giảm giá đúng chuẩn để tránh lấy sai nếu nhập "2,000"
     const dValStr = document.getElementById('discountVal').value.replace(/,/g, '');
-    const dVal = parseFloat(dValStr) || 0;
+    const dVal = parseCurrency(dValStr) || 0;
     const dType = document.getElementById('discountType').value;
     
     let disc = dType === 'percent' ? subtotal * (dVal/100) : dVal;
@@ -492,24 +477,41 @@ function saveOrder() {
     
     if(!phone || !name) return showCustomAlert("Vui lòng nhập Tên hoặc SĐT!", "warning");
     
-    let products = []; let valid = true;
+    let products = [];
+    let valid = true;
+
     document.querySelectorAll('.product-row').forEach((row) => {
         const nameInput = row.querySelector('.p-name').value;
         const priceInput = row.querySelector('.p-price').value;
         const qtyInput = parseInt(row.querySelector('.p-qty').value) || 1;
-        if(!nameInput || !priceInput) valid = false;
-        else products.push({ name: nameInput, price: parseCurrency(priceInput) || 0, qty: qtyInput });
+        
+        if(!nameInput || !priceInput) {
+            valid = false;
+        } else {
+            products.push({ name: nameInput, price: parseCurrency(priceInput) || 0, qty: qtyInput });
+        }
     });
 
     if(!valid || products.length === 0) return showCustomAlert("Kiểm tra lại thông tin sản phẩm!", "warning");
     
-    if (!isEdit) {
-        products.forEach(p => {
-            const invItem = inventory.find(i => i.name.toLowerCase() === p.name.toLowerCase());
-            if (invItem) invItem.qty = Math.max(0, invItem.qty - p.qty);
-            else inventory.push({ name: p.name, price: p.price, qty: 0 });
+    const id = isEdit ? document.getElementById('editOrderId').value : Date.now().toString();
+    const existingOrder = isEdit ? orders.find(x => x.id == id) : null;
+    
+    if (isEdit && existingOrder) {
+        existingOrder.products.forEach(oldP => {
+            const invItem = inventory.find(i => i.name.toLowerCase() === oldP.name.toLowerCase());
+            if (invItem) invItem.qty = Number(invItem.qty) + Number(oldP.qty);
         });
     }
+
+    products.forEach(p => {
+        const invItem = inventory.find(i => i.name.toLowerCase() === p.name.toLowerCase());
+        if (invItem) {
+            invItem.qty = Math.max(0, Number(invItem.qty) - Number(p.qty));
+        } else {
+            inventory.push({ name: p.name, price: p.price, qty: 0 });
+        }
+    });
     
     if(!customers[phone]) {
         customers[phone] = { name, address: addr, birthday: '', job: '', note: '', anniversary: document.getElementById('orderDate').value, status: 'Vãn lai', timestamp: Date.now() };
@@ -520,24 +522,23 @@ function saveOrder() {
     }
 
     const { subtotal, total } = calculateTotal();
-    const id = isEdit ? document.getElementById('editOrderId').value : Date.now().toString();
-    const existingOrder = isEdit ? orders.find(x => x.id == id) : null;
     
-    const dValStr = document.getElementById('discountVal').value.replace(/,/g, '');
+    const orderTimestamp = (isEdit && existingOrder) ? existingOrder.timestamp : Date.now();
 
     const order = { 
         id, 
-        timestamp: (isEdit && existingOrder) ? existingOrder.timestamp : Date.now(), 
+        timestamp: orderTimestamp, 
         customer: { name, phone, addr, type }, 
         products, 
         payMethod: document.getElementById('payMethod').value, 
-        shipFee: parseCurrency(document.getElementById('shipFee').value) || 0, 
-        discount: { val: parseFloat(dValStr) || 0, type: document.getElementById('discountType').value }, 
+        shipFee: parseCurrency(document.getElementById('shipFee').value) || 0, // <--- SỬA TẠI ĐÂY
+        discount: { val: parseCurrency(document.getElementById('discountVal').value) || 0, type: document.getElementById('discountType').value }, // <--- SỬA TẠI ĐÂY
         orderDate: document.getElementById('orderDate').value,
         date: document.getElementById('shipDate').value, 
         deliveryDate: document.getElementById('deliveryDate').value, 
         note: document.getElementById('orderNote').value.trim(), 
-        subtotal, total, 
+        subtotal, 
+        total, 
         status: existingOrder ? existingOrder.status : "Đợi gửi",
         isPaid: existingOrder ? (existingOrder.isPaid || false) : false 
     };
@@ -548,7 +549,8 @@ function saveOrder() {
     } else {
         orders.unshift(order); 
     }
-    orders.sort((a, b) => b.timestamp - a.timestamp); // Sắp xếp đơn mới nhất lên trên
+
+    orders.sort((a, b) => b.timestamp - a.timestamp);
 
     let updates = {};
     updates[`v11_orders/${id}`] = order;
@@ -556,59 +558,28 @@ function saveOrder() {
     updates[`v11_inventory`] = inventory;
 
     syncData(updates).then(() => {
-        resetForm(); renderTable(); 
-        showToast(isOfflineMode ? "Đã lưu (Chế độ Offline)!" : "Đã lưu đồng bộ thành công!");
+        resetForm(); 
+        renderTable(); 
+        showToast("Đã lưu đồng bộ thành công!");
+    }).catch((error) => {
+        showCustomAlert("Có lỗi khi lưu đơn hàng: " + error.message, "error");
     });
 }
 
 function renderTable() {
-    const startInput = document.getElementById('listFilterStart');
-    const endInput = document.getElementById('listFilterEnd');
-    
-    // Đảm bảo luôn lấy mặc định Mùng 1 đến Hiện tại (chuẩn giờ VN) nếu chưa có giá trị
-    if (!startInput.value && !endInput.value) {
-        const todayStr = getLocalDateString();
-        startInput.value = todayStr.substring(0, 8) + '01'; // Luôn là mùng 1 của tháng hiện tại
-        endInput.value = todayStr; // Ngày hiện tại
-    }
-
-    const fStart = startInput.value;
-    const fEnd = endInput.value;
+    const fStart = document.getElementById('listFilterStart').value;
+    const fEnd = document.getElementById('listFilterEnd').value;
     const fType = document.getElementById('listFilterType').value;
+    const search = document.getElementById('searchOrderInput').value.toLowerCase();
     
-    const searchInputVal = document.getElementById('searchOrderInput').value;
-    const search = removeAccents(searchInputVal.trim());
-    const searchTerms = search ? search.split(' ') : [];
-
-    // Chuyển đổi bộ lọc ngày sang số để so sánh
-    const startNum = fStart ? dateToNumber(fStart) : 0;
-    const endNum = fEnd ? dateToNumber(fEnd) : 99999999;
-
     let filtered = orders.filter(o => {
         const targetDate = o.orderDate || o.date;
-        const targetNum = targetDate ? dateToNumber(targetDate) : 0; // Chuyển ngày của đơn hàng sang số
-        
-        const isSearching = searchTerms.length > 0;
-
-        // So sánh bằng số (Number) thay vì chuỗi (String) - Khắc phục triệt để lỗi ẩn đơn
-        const dateMatch = (!fStart || targetNum >= startNum) && (!fEnd || targetNum <= endNum);
+        const dateMatch = (!fStart || targetDate >= fStart) && (!fEnd || targetDate <= fEnd);
         const typeMatch = (fType === 'all' || o.customer.type === fType);
-
-        let searchMatch = true;
-        if (isSearching) {
-            const customerName = o.customer.name ? removeAccents(o.customer.name) : '';
-            searchMatch = searchTerms.every(term => 
-                o.customer.phone.includes(term) || customerName.includes(term)
-            );
-        }
-
-        // Ưu tiên hiển thị kết quả tìm kiếm nếu đang gõ
-        if (isSearching) return searchMatch; 
-        
-        return dateMatch && typeMatch;
+        const searchMatch = !search || o.customer.name.toLowerCase().includes(search) || o.customer.phone.includes(search);
+        return dateMatch && typeMatch && searchMatch;
     });
-
-    // Đảm bảo đơn mới nhất luôn ở trên
+    
     filtered.sort((a, b) => b.timestamp - a.timestamp);
 
     document.getElementById('orderTableBody').innerHTML = filtered.map(o => {
@@ -617,22 +588,48 @@ function renderTable() {
         if (o.payMethod === "Chuyển khoản") shortPayMethod = "CK";
         else if (o.payMethod === "Tiền mặt") shortPayMethod = "TM";
 
-        let paidStyle = o.isPaid ? "background-color: #10b981; border-color: #059669; color: #ffffff;" : "background-color: #f1f5f9; border-color: #e2e8f0; color: #94a3b8;";
-        let shipDateStyle = o.status === 'Đợi gửi' ? "bg-[#EE6457]/10 text-[#EE6457] border border-[#EE6457]/30" : "bg-slate-100 text-slate-400 border border-slate-200 opacity-60"; 
+        let paidStyle = o.isPaid 
+            ? "background-color: #10b981; border-color: #059669; color: #ffffff;"
+            : "background-color: #f1f5f9; border-color: #e2e8f0; color: #94a3b8;";
+
+        let shipDateStyle = o.status === 'Đợi gửi' 
+            ? "bg-[#EE6457]/10 text-[#EE6457] border border-[#EE6457]/30" 
+            : "bg-slate-100 text-slate-400 border border-slate-200 opacity-60"; 
 
         return `
         <tr class="hover:bg-[#FDF5F4]/50 transition-colors">
             <td class="p-4">
                 <div class="flex items-start gap-2">
-                    <div><b>${o.customer.name}</b> <span class="text-[9px] px-1.5 py-0.5 rounded ${o.customer.type === 'ttd' ? 'bg-purple-100 text-purple-600' : 'bg-blue-100 text-blue-600'} font-bold uppercase ml-1">${o.customer.type === 'ttd' ? 'TTD' : 'Mới'}</span><br><span class="text-xs text-[#97BEC6]">${o.customer.phone}</span></div>
-                    <button onclick="copyCustomerInfo('${o.customer.name.replace(/'/g, "\\'")}', '${o.customer.phone}', '${o.customer.addr.replace(/'/g, "\\'").replace(/\n/g, ' ')}')"><i class="fa-solid fa-copy text-[10px]"></i></button>
+                    <div>
+                        <b>${o.customer.name}</b> 
+                        <span class="text-[9px] px-1.5 py-0.5 rounded ${o.customer.type === 'ttd' ? 'bg-purple-100 text-purple-600' : 'bg-blue-100 text-blue-600'} font-bold uppercase ml-1">${o.customer.type === 'ttd' ? 'TTD' : 'Mới'}</span>
+                        <br><span class="text-xs text-[#97BEC6]">${o.customer.phone}</span>
+                    </div>
+                    <button onclick="copyCustomerInfo('${o.customer.name.replace(/'/g, "\\'")}', '${o.customer.phone}', '${o.customer.addr.replace(/'/g, "\\'").replace(/\n/g, ' ')}')">
+                        <i class="fa-solid fa-copy text-[10px]"></i>
+                    </button>
                 </div>
             </td>
             <td class="p-4 text-xs text-slate-500 line-clamp-1">${o.products.map(p => `${p.name} (x${p.qty})`).join(', ')}</td>
-            <td class="p-4 text-center"><span id="ship-badge-${o.id}" class="${shipDateStyle} font-black px-3 py-1 rounded-lg text-[11px] shadow-sm whitespace-nowrap"><i class="fa-solid fa-truck-fast mr-1"></i>${formattedShipDate}</span></td>
-            <td class="p-4 text-center font-black text-[#034C5F] text-xs">${shortPayMethod}</td>
             <td class="p-4 text-center">
-                <select id="status-select-${o.id}" onchange="changeOrderStatus('${o.id}', this.value)" class="text-[11px] font-bold rounded-full px-3 py-1 cursor-pointer appearance-none border-none outline-none focus:ring-0" style="background-color: ${getStatusStyles(o.status).bg} !important; color: ${getStatusStyles(o.status).text} !important; text-align: center; min-width: 100px;">
+                    <span id="ship-badge-${o.id}" class="${shipDateStyle} font-black px-3 py-1 rounded-lg text-[11px] shadow-sm whitespace-nowrap transition-all">
+                    <i class="fa-solid fa-truck-fast mr-1"></i>${formattedShipDate}
+                </span>
+            </td>
+
+            <td class="p-4 text-center font-black text-[#034C5F] text-xs">
+                ${shortPayMethod}
+            </td>
+            <td class="p-4 text-center">
+                <select id="status-select-${o.id}" onchange="changeOrderStatus('${o.id}', this.value)" 
+                    class="text-[11px] font-bold rounded-full px-3 py-1 cursor-pointer transition-all appearance-none border-none outline-none focus:ring-0"
+                    style="
+                        background-color: ${getStatusStyles(o.status).bg} !important; 
+                        color: ${getStatusStyles(o.status).text} !important;
+                        text-align: center;
+                        width: auto;
+                        min-width: 100px;
+                    ">
                     <option value="Đợi gửi" ${o.status === 'Đợi gửi' ? 'selected' : ''} style="background: white; color: #000000;">Đợi gửi</option>
                     <option value="Đang giao" ${o.status === 'Đang giao' ? 'selected' : ''} style="background: white; color: #1e40af;">Đang giao 🚚</option>
                     <option value="Thành công" ${o.status === 'Thành công' ? 'selected' : ''} style="background: white; color: #065f46;">Thành công ✅</option>
@@ -643,8 +640,15 @@ function renderTable() {
                     <option value="Đã Hủy" ${o.status === 'Đã Hủy' ? 'selected' : ''} style="background: white; color: #374151;">Đã Hủy ❌</option>
                 </select>
             </td>
+
             <td class="p-4 text-right font-bold text-[#EE6457]">${formatMoney(o.total)}</td>
-            <td class="p-4 text-center"><button id="btn-paid-${o.id}" onclick="togglePaidStatus('${o.id}')" class="w-7 h-7 rounded-lg border flex items-center justify-center transition-all hover:scale-110 shadow-sm mx-auto" style="${paidStyle}"><i class="fa-solid fa-check text-sm"></i></button></td>
+           <td class="p-4 text-center">
+                <button id="btn-paid-${o.id}" onclick="togglePaidStatus('${o.id}')" 
+                    class="w-7 h-7 rounded-lg border flex items-center justify-center transition-all hover:scale-110 shadow-sm mx-auto" 
+                    style="${paidStyle}" title="Đánh dấu đã thu tiền">
+                    <i class="fa-solid fa-check text-sm"></i>
+                </button>
+            </td>
             <td class="p-4 text-center">
                 <div class="flex justify-center gap-3">
                     <button onclick="openInvoice('${o.id}')" class="text-[#97BEC6] hover:text-[#034C5F]"><i class="fa-solid fa-receipt text-lg"></i></button>
@@ -655,6 +659,7 @@ function renderTable() {
         </tr>`;
     }).join('');
 }
+
 
 function changeOrderStatus(id, newStatus) {
     const index = orders.findIndex(o => o.id == id);
@@ -745,12 +750,11 @@ function addManualCustomer() {
 function updateCustomerField(p, f, v) { 
     if(customers[p]) { 
         customers[p][f] = v; 
-        saveCRM(); 
         
-        // Cập nhật lại UI nếu thay đổi ngày tháng để hiện thông báo mới nhất
+        syncData({ [`v11_customers/${p}/${f}`]: v }); 
+        
         if(f === 'birthday' || f === 'anniversary') {
             checkAndShowEvents();
-            renderCustomerCRM(); 
         }
     } 
 }
@@ -776,16 +780,13 @@ function renderCustomerCRM() {
 
         const searchInput = document.getElementById('searchCustomerInput');
     if (searchInput && searchInput.value) {
-        // Cắt từ khóa thành mảng các từ
         const searchTerms = removeAccents(searchInput.value.trim()).split(' ');
         
         keys = keys.filter(phone => {
             const customerName = customers[phone].name ? removeAccents(customers[phone].name) : '';
-            // Kiểm tra xem Tên hoặc SĐT có chứa TẤT CẢ các từ khóa không
             return searchTerms.every(term => phone.includes(term) || customerName.includes(term));
         });
     }
-
 
     keys.sort((a, b) => {
         const cA = customers[a] || {}; const cB = customers[b] || {};
@@ -806,7 +807,6 @@ function renderCustomerCRM() {
         const statusStyle = CUSTOMER_STATUS_STYLES[currentStatus] || "";
         const safePhone = phone.replace(/'/g, "\\'");
         
-        // So sánh ngày hôm nay an toàn
         const bdayData = parseDateString(c.birthday);
         const anniData = parseDateString(c.anniversary);
         let bdayClass = (bdayData && bdayData.d === todayDate && bdayData.m === todayMonth) ? "birthday-today" : "bg-light-pink";
@@ -827,12 +827,11 @@ function renderCustomerCRM() {
         </tr>`;
     }).join('');
 
-    // Khởi tạo Flatpickr cho các ô Ngày sinh nhật / Kỷ niệm với chuẩn Việt Nam
     flatpickr(".flatpickr-birthday, .flatpickr-anniversary", {
         locale: "vn",
-        dateFormat: "Y-m-d", // Chuẩn định dạng khi lưu
+        dateFormat: "Y-m-d", 
         altInput: true,
-        altFormat: "d/m/Y", // Hiển thị trên màn hình
+        altFormat: "d/m/Y", 
         minDate: "1950-01-01",
         maxDate: "2060-12-31",
         onChange: function(selectedDates, dateStr, instance) {
@@ -869,7 +868,7 @@ function addCVAccumulation() {
         cvAccumulations.push({ id: Date.now(), amount: amount, date: date, method: method, checked: false, note: note });
     }
 
-    document.getElementById('cvAccAmount').value = ''; document.getElementById('cvAccDate').value = getLocalDateString(); document.getElementById('cvAccNote').value = '';
+   document.getElementById('cvAccAmount').value = ''; document.getElementById('cvAccDate').value = getLocalDateString(); document.getElementById('cvAccNote').value = '';
     cvAccumulations.sort((a,b) => new Date(b.date) - new Date(a.date));
     saveCVSync(); renderAllCV(); showToast("Đã lưu tích lũy thành công!");
 }
@@ -887,7 +886,7 @@ function editCVAccumulation(id) {
 }
 
 function toggleCVCheck(id) {
-    let acc = cvAccumulations.find(a => a.id == id); // Fix lỗi gán sai mảng cũ
+    let acc = cvAccumulations.find(a => a.id == id); 
     if(acc) {
         acc.checked = !acc.checked;
         saveCVSync(); renderCVAccumulations();
@@ -1025,7 +1024,7 @@ function openInvoice(id) {
     document.getElementById('invoiceContent').innerHTML = ` 
         <div style="padding:40px 30px; text-align:center; background:white;">
             <h1 style="margin:0; font-size:32px; font-weight:900; color:#034C5F; letter-spacing:1px; line-height: 1.2;">HÓA ĐƠN</h1>
-            <p style="margin:8px 0 0 0; color:#EE6457; font-size:14px; font-weight:600; line-height: 1.5;">🌷 Mọi sản phẩm gửi đi là cả tấm lòng 🌷</p> 
+            <p style="margin:8px 0 0 0; color:#EE6457; font-weight:600; line-height: 1.5;">🌷 Mọi sản phẩm gửi đi là cả tấm lòng 🌷</p> 
         </div> 
         <div style="padding:0 20px 10px 20px; background:white;"> 
             <div style="display:flex; justify-content:space-between; border-bottom:1px solid #f1f5f9; padding-bottom:15px; margin-bottom:10px;"> 
@@ -1059,18 +1058,47 @@ function openInvoice(id) {
 }
 
 function resetForm() { 
-    document.getElementById('orderForm').reset(); 
-    document.getElementById('editOrderId').value = ""; 
+    // Reset chính thức từ thẻ form (nếu có)
+    const form = document.getElementById('orderForm');
+    if(form) form.reset(); 
+    
+    // Sửa lỗi Reset số 3: Chủ động xóa trắng sạch sẽ tất cả các Input/Textarea người dùng đã nhập
+    const fieldsToClear = ['editOrderId', 'custPhone', 'custName', 'custAddr', 'orderNote', 'shipFee', 'discountVal'];
+    fieldsToClear.forEach(id => {
+        const el = document.getElementById(id);
+        if(el) el.value = '';
+    });
+
+    // Chủ động Reset lại các Dropdown (Select) về lựa chọn mặc định ban đầu
+    const custTypeEl = document.getElementById('custType');
+    if (custTypeEl) custTypeEl.value = 'new';
+    
+    const payMethodEl = document.getElementById('payMethod');
+    if (payMethodEl) payMethodEl.value = 'COD';
+
+    const discountTypeEl = document.getElementById('discountType');
+    if (discountTypeEl) discountTypeEl.value = 'amount';
+
+    // Xóa sạch danh sách sản phẩm và tự động nhả lại 1 ô nhập sản phẩm trống
     document.getElementById('product-list').innerHTML = ""; 
     addProductRow(); 
     
+    // Reset ngày tháng về hôm nay
     const todayStr = getLocalDateString();
-    document.getElementById('orderDate').value = todayStr; 
-    document.getElementById('shipDate').value = todayStr; 
+    const orderDateEl = document.getElementById('orderDate');
+    if (orderDateEl) orderDateEl.value = todayStr; 
     
-    autoSetDeliveryDate(); calculateTotal(); 
-    document.getElementById('btnSave').innerHTML = '<i class="fa-solid fa-check-double mr-2"></i>Lưu đơn'; 
+    const shipDateEl = document.getElementById('shipDate');
+    if (shipDateEl) shipDateEl.value = todayStr; 
+    
+    autoSetDeliveryDate(); 
+    calculateTotal(); 
+    
+    // Reset lại trạng thái của nút
+    const btnSave = document.getElementById('btnSave');
+    if (btnSave) btnSave.innerHTML = '<i class="fa-solid fa-check-double mr-2"></i>Lưu đơn'; 
 }
+
 
 function editOrder(id) { 
     const o = orders.find(x => x.id == id); 
@@ -1095,15 +1123,28 @@ function downloadImage() {
     setTimeout(() => { html2canvas(invoice, { scale: 2, useCORS: true, logging: false, backgroundColor: "#ffffff", scrollY: -window.scrollY, windowWidth: invoice.scrollWidth, windowHeight: invoice.scrollHeight }).then(canvas => { const link = document.createElement('a'); link.download = `HoaDon_BNDShop_${new Date().getTime()}.png`; link.href = canvas.toDataURL('image/png', 1.0); link.click(); showToast("✅ Đã lưu ảnh hóa đơn thành công!"); }).catch(err => { showToast("❌ Có lỗi xảy ra khi lưu ảnh, vui lòng thử lại!"); }).finally(() => { invoice.style.overflow = originalOverflow || ''; invoice.style.paddingBottom = originalPadding || ''; invoice.style.boxShadow = originalShadow || ''; btn.innerHTML = originalText; btn.disabled = false; }); }, 300); 
 }
 
-function switchTab(t) { ['view-orders', 'view-analytics', 'view-customers', 'view-inventory', 'view-cv'].forEach(v => document.getElementById(v).classList.add('hidden')); document.getElementById(`view-${t}`).classList.remove('hidden'); document.querySelectorAll('nav button').forEach(btn => btn.className = "px-3 md:px-4 py-2 rounded-xl text-sm font-medium text-[#034C5F] transition-all bg-transparent"); document.getElementById(`tab-${t}`).className = "px-3 md:px-4 py-2 rounded-xl text-sm font-bold bg-white text-[#034C5F] shadow-sm"; if(t === 'analytics') renderAnalytics(); if(t === 'inventory') renderInventory(); if(t === 'customers') renderCustomerCRM(); if(t === 'cv') { initCVSummaryFilters(); renderAllCV(); } }
+function switchTab(t) { 
+    ['view-orders', 'view-analytics', 'view-customers', 'view-inventory', 'view-cv'].forEach(v => document.getElementById(v).classList.add('hidden')); 
+    document.getElementById(`view-${t}`).classList.remove('hidden'); 
+    document.querySelectorAll('nav button').forEach(btn => btn.className = "px-3 md:px-4 py-2 rounded-xl text-sm font-medium text-[#034C5F] transition-all bg-transparent"); 
+    document.getElementById(`tab-${t}`).className = "px-3 md:px-4 py-2 rounded-xl text-sm font-bold bg-white text-[#034C5F] shadow-sm"; 
+    
+    if(t === 'orders') renderTable();
+    if(t === 'analytics') renderAnalytics(); 
+    if(t === 'inventory') renderInventory(); 
+    if(t === 'customers') renderCustomerCRM(); 
+    if(t === 'cv') { initCVSummaryFilters(); renderAllCV(); } 
+}
 function toggleSettingsMenu() { const menu = document.getElementById('settingsMenu'); menu.classList.toggle('hidden'); document.getElementById('notificationMenu').classList.add('hidden'); const closeMenu = (e) => { if (!document.getElementById('settingsMenuContainer').contains(e.target)) { menu.classList.add('hidden'); document.removeEventListener('click', closeMenu); } }; if (!menu.classList.contains('hidden')) { setTimeout(() => document.addEventListener('click', closeMenu), 10); } else { document.removeEventListener('click', closeMenu); } }
 function toggleNotificationMenu() { const menu = document.getElementById('notificationMenu'); menu.classList.toggle('hidden'); document.getElementById('settingsMenu').classList.add('hidden'); const closeMenu = (e) => { if (!document.getElementById('notificationMenuContainer').contains(e.target)) { menu.classList.add('hidden'); document.removeEventListener('click', closeMenu); } }; if (!menu.classList.contains('hidden')) { setTimeout(() => document.addEventListener('click', closeMenu), 10); } else { document.removeEventListener('click', closeMenu); } }
 function resetOrderFilters() { 
     document.getElementById('listFilterStart').value = ''; 
     document.getElementById('listFilterEnd').value = ''; 
     document.getElementById('listFilterType').value = 'all'; 
+    document.getElementById('searchOrderInput').value = ''; 
     renderTable(); 
 }
+
 function openExportModal() { document.getElementById('exportModal').classList.remove('hidden'); const today = new Date(); document.getElementById('exportStartDate').value = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().split('T')[0]; document.getElementById('exportEndDate').value = getLocalDateString(); document.getElementById('exportFileName').value = `Don_Hang_Thang_${today.getMonth()+1}`; }
 function closeExportModal() { document.getElementById('exportModal').classList.add('hidden'); }
 
@@ -1114,30 +1155,25 @@ function confirmExport() {
     const s = document.getElementById('exportStartDate').value;
     const e = document.getElementById('exportEndDate').value;
 
-    // Lọc dữ liệu theo ngày
     const data = orders.filter(o => {
         const targetDate = o.orderDate || o.date;
         return (!s || targetDate >= s) && (!e || targetDate <= e);
     });
 
-    // 1. Header với BOM để tránh lỗi font tiếng Việt trên Excel
     let csv = "\ufeffMã Đơn,Ngày Đặt,Ngày Gửi,Ngày Giao,Tên Khách,SĐT,Sản Phẩm,Tổng Tiền\n";
 
-    // 2. Hàm xử lý chuỗi an toàn
     const escapeCSV = (text) => {
         if (!text) return "";
-        // Thay thế dấu " thành "" và bọc toàn bộ nội dung trong cặp dấu ""
         return `"${String(text).replace(/"/g, '""')}"`;
     };
 
-    // 3. Duyệt dữ liệu
     data.forEach(o => {
         const productNames = o.products ? o.products.map(p => p.name).join(' | ') : "";
         
         const row = [
             o.id,
             o.orderDate || o.date || '',
-            o.shipDate || '', // Giả định bạn có shipDate hoặc dùng date gửi
+            o.shipDate || '', 
             o.deliveryDate || '',
             escapeCSV(o.customer?.name),
             escapeCSV(o.customer?.phone),
@@ -1148,7 +1184,6 @@ function confirmExport() {
         csv += row.join(",") + "\n";
     });
 
-    // 4. Tạo và tải file
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
@@ -1158,34 +1193,26 @@ function confirmExport() {
     document.body.appendChild(link);
     link.click();
     
-    // Dọn dẹp
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
     closeExportModal();
 }
 
 function exportCustomersToExcel() {
-    // 1. Khởi tạo Header với BOM để Excel nhận diện được tiếng Việt (UTF-8)
     let csv = "\ufeffTên Khách Hàng,Số Điện Thoại,Địa Chỉ,Sinh Nhật,Ngày Kỉ Niệm,Công Việc,Tình Trạng,Ghi Chú,Tổng Chi Tiêu\n";
 
-    // 2. Hàm bổ trợ để làm sạch dữ liệu trước khi đưa vào CSV
     const escapeCSV = (text) => {
         if (text === null || text === undefined) return "";
-        // Chuyển về chuỗi, thay thế dấu " thành "" (quy tắc của CSV) 
-        // và loại bỏ các dấu xuống dòng để không làm nát hàng trong Excel
         return String(text).replace(/"/g, '""').replace(/\n|\r/g, ' ');
     };
 
-    // 3. Duyệt danh sách khách hàng
     Object.keys(customers).forEach(phone => {
         const c = customers[phone];
         
-        // Tính tổng chi tiêu của khách này từ mảng orders
         const totalSpend = orders
             .filter(o => o.customer && o.customer.phone === phone)
             .reduce((a, b) => a + (Number(b.total) || 0), 0);
 
-        // Chuẩn bị các trường dữ liệu đã được "làm sạch"
         const row = [
             escapeCSV(c.name),
             escapeCSV(phone),
@@ -1195,14 +1222,12 @@ function exportCustomersToExcel() {
             escapeCSV(c.job),
             escapeCSV(c.status),
             escapeCSV(c.note),
-            totalSpend // Số điện thoại và số tiền không cần escape nếu là số thuần
+            totalSpend 
         ];
 
-        // Nối vào chuỗi CSV, bọc mỗi trường trong dấu ngoặc kép và cách nhau bằng dấu phẩy
         csv += `"${row.join('","')}"\n`;
     });
 
-    // 4. Tạo và tải file
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement("a");
     const url = URL.createObjectURL(blob);
@@ -1271,7 +1296,6 @@ function setupCustomAutocomplete() {
         if (!val) return boxElement.classList.remove('active');
         const customerKeys = Object.keys(customers);
         
-        // Tìm kiếm AutoComplete sử dụng removeAccents
         const matches = type === 'phone' 
             ? customerKeys.filter(phone => phone.includes(val)).slice(0, 5) 
             : customerKeys.filter(phone => customers[phone].name && removeAccents(customers[phone].name).includes(val)).slice(0, 5);
@@ -1318,7 +1342,6 @@ function checkAndShowEvents() {
     for (const phone in customers) {
         const c = customers[phone];
         
-        // Sinh nhật
         const b = parseDateString(c.birthday);
         if (b && b.m === currentMonth) { 
             let age = currentYear - b.y;
@@ -1329,7 +1352,6 @@ function checkAndShowEvents() {
             }); 
         }
         
-        // Kỷ niệm
         const a = parseDateString(c.anniversary);
         if (a && a.m === currentMonth) { 
             let years = currentYear - a.y; 
@@ -1352,7 +1374,6 @@ function checkAndShowEvents() {
     if (events.length > 0) {
         dot.classList.remove('hidden'); countBadge.innerText = events.length; let html = '';
         events.forEach(e => { 
-            // Nếu là HÔM NAY, làm nổi bật nhãn
             const todayBadge = e.isToday ? `<span class="bg-red-500 text-white px-1.5 py-0.5 rounded ml-1 animate-pulse uppercase tracking-wider text-[9px]"><i class="fa-solid fa-star mr-1"></i>Hôm nay</span>` : '';
             
             if(e.type === 'birthday') {
@@ -1390,7 +1411,6 @@ document.addEventListener("visibilitychange", () => { if (document.visibilitySta
 // HỆ THỐNG AUTHENTICATION & PROFILE
 // ==========================================
 
-// Theo dõi trạng thái đăng nhập
 onAuthStateChanged(auth, async (user) => {
     currentUser = user;
     const btnLogin = document.getElementById('btnLoginMenu');
@@ -1398,28 +1418,21 @@ onAuthStateChanged(auth, async (user) => {
     const btnLogout = document.getElementById('btnLogoutMenu');
     
     if (user) {
-        // Đã đăng nhập
         btnLogin.classList.add('hidden');
         btnProfile.classList.remove('hidden');
         btnLogout.classList.remove('hidden');
         
-        // Tắt chế độ Offline tự động nếu có user (để đồng bộ thật)
         if(isOfflineMode) showToast("Đã đăng nhập - Vui lòng tắt isOfflineMode trong code để đồng bộ!");
         
         closeAuthModal();
         await loadUserData(user);
     } else {
-        // Chưa đăng nhập
         btnLogin.classList.remove('hidden');
         btnProfile.classList.add('hidden');
         btnLogout.classList.add('hidden');
-        
-        // Block giao diện nếu muốn (Tuỳ chọn: bạn có thể ẩn thẻ <main> cho đến khi login)
-        // document.querySelector('main').classList.add('hidden');
     }
 });
 
-// UI Modal Logic
 function openLoginModal() {
     toggleAuthMode('login');
     const modal = document.getElementById('authModal');
@@ -1459,7 +1472,6 @@ function toggleAuthMode(mode) {
     }
 }
 
-// Xử lý Form Auth
 async function handleAuthAction() {
     const email = document.getElementById('authEmail').value.trim();
     const password = document.getElementById('authPassword').value;
@@ -1478,7 +1490,6 @@ async function handleAuthAction() {
             showToast("Đăng nhập thành công!");
         } else if (currentAuthMode === 'register') {
             const userCred = await createUserWithEmailAndPassword(auth, email, password);
-            // Tạo profile ban đầu trên Realtime DB
             await set(ref(db, `SunsetShopData/Users/${userCred.user.uid}`), {
                 email: email, joinDate: getLocalDateString(), role: 'employee'
             });
@@ -1499,7 +1510,6 @@ async function handleAuthAction() {
 async function handleGoogleLogin() {
     try {
         const result = await signInWithPopup(auth, googleProvider);
-        // Kiểm tra xem đã có data trên DB chưa
         const userRef = ref(db, `SunsetShopData/Users/${result.user.uid}`);
         const snapshot = await get(userRef);
         if (!snapshot.exists()) {
@@ -1518,7 +1528,6 @@ function handleSignOut() {
     });
 }
 
-// UI Hồ sơ
 function openProfileModal() {
     const modal = document.getElementById('profileModal');
     modal.classList.remove('hidden');
@@ -1535,13 +1544,11 @@ function closeProfileModal() {
     selectedAvatarFile = null;
 }
 
-// Load dữ liệu hồ sơ
 async function loadUserData(user) {
     document.getElementById('profileEmail').value = user.email || '';
     document.getElementById('profileName').value = user.displayName || '';
     document.getElementById('profileAvatarPreview').src = user.photoURL || `https://ui-avatars.com/api/?name=${user.email.charAt(0)}&background=034C5F&color=fff`;
 
-    // Lấy dữ liệu mở rộng từ DB
     const userRef = ref(db, `SunsetShopData/Users/${user.uid}`);
     const snapshot = await get(userRef);
     if (snapshot.exists()) {
@@ -1573,25 +1580,23 @@ async function saveUserProfile() {
         const name = document.getElementById('profileName').value.trim();
         const phone = document.getElementById('profilePhone').value.trim();
         const dob = document.getElementById('profileDOB').value;
-        const joinDate = document.getElementById('profileJoinDate').value; // Bổ sung lấy ngày tham gia
-        let photoURL = currentUser.photoURL;
+        const joinDate = document.getElementById('profileJoinDate').value; 
+        
+        let photoURL = currentUser.photoURL || ""; 
 
-        // Xử lý upload ảnh nếu có đổi
         if (selectedAvatarFile) {
             const avatarRef = storageRef(storage, `Avatars/${currentUser.uid}_${Date.now()}`);
             await uploadBytes(avatarRef, selectedAvatarFile);
             photoURL = await getDownloadURL(avatarRef);
         }
 
-        // Cập nhật Firebase Auth (Tên & Ảnh)
         await updateProfile(currentUser, { displayName: name, photoURL: photoURL });
 
-        // Cập nhật Firebase Realtime DB (Phone, DOB, JoinDate)
         await update(ref(db, `SunsetShopData/Users/${currentUser.uid}`), {
             name: name, 
             phone: phone, 
             dob: dob, 
-            joinDate: joinDate, // Gửi dữ liệu ngày tham gia lên Firebase
+            joinDate: joinDate,
             photoURL: photoURL
         });
 
@@ -1601,12 +1606,17 @@ async function saveUserProfile() {
         console.error("Lỗi khi lưu profile:", error);
         showCustomAlert("Lỗi cập nhật: " + error.message, "error");
     } finally {
-        // Phục hồi lại nút ban đầu, chống kẹt spinner
         btnSave.innerHTML = '<i class="fa-solid fa-floppy-disk text-lg mr-2"></i> LƯU THAY ĐỔI';
         btnSave.disabled = false;
     }
 }
 
+flatpickr(".flatpickr-profile", {
+    locale: "vn",
+    dateFormat: "Y-m-d", 
+    altInput: true,
+    altFormat: "d/m/Y",  
+});
 
 // ==============================================================
 // GẮN TẤT CẢ CÁC HÀM VÀO WINDOW CHO HTML
@@ -1621,5 +1631,4 @@ Object.assign(window, {
     renderCVMonthlyStats, closeModal, downloadImage, closeExportModal, confirmExport, updateQty, editCVAccumulation, 
     toggleCVCheck, deleteCVAccumulation, copyCustomerInfo,openLoginModal, closeAuthModal, toggleAuthMode, handleAuthAction, handleGoogleLogin, handleSignOut,
     openProfileModal, closeProfileModal, handleAvatarSelect, saveUserProfile
-
 });

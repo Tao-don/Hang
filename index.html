@@ -137,7 +137,7 @@
     <main class="container mx-auto px-4 pt-6 pb-6 lg:max-w-7xl"> 
         <div id="view-orders" class="space-y-6">
             <section class="card p-6 border-t-[6px] border-[#034C5F]">
-                Đổi thành <form id="orderForm" novalidate onsubmit="event.preventDefault(); saveOrder();" class="space-y-6">
+                 <form id="orderForm" novalidate onsubmit="event.preventDefault(); saveOrder();" class="space-y-6">
                     <input type="hidden" id="editOrderId" value="">
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div class="space-y-4">
@@ -595,7 +595,7 @@
             <button onclick="closeAuthModal()" class="text-slate-400 hover:text-red-500"><i class="fa-solid fa-xmark text-xl"></i></button>
         </div>
 
-        <form id="loginForm" class="space-y-4" onsubmit="event.preventDefault(); handleAuthAction();">.
+        <form id="loginForm" class="space-y-4" onsubmit="event.preventDefault(); handleAuthAction();">
             <div class="input-group"><i class="fa-solid fa-envelope input-icon"></i><input type="email" id="authEmail" class="form-input" placeholder="Email nhân viên..."></div>
             <div class="input-group" id="passwordGroup"><i class="fa-solid fa-lock input-icon"></i><input type="password" id="authPassword" class="form-input" placeholder="Mật khẩu..."></div>
             
@@ -644,55 +644,51 @@
         </div>
 
         <div class="space-y-4 bg-slate-50 p-5 rounded-2xl border border-slate-100">
-            
-            <div class="relative">
-                <label class="text-[10px] font-bold text-[#97BEC6] uppercase block mb-1">Họ và Tên</label>
-                <div class="relative">
-                    <i class="fa-solid fa-user absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
-                    <input type="text" id="profileName" class="form-input !pl-9 w-full bg-white font-bold text-[#034C5F] border-slate-200 focus:border-[#034C5F]" placeholder="Nhập họ tên...">
-                </div>
-            </div>
-            
-            <div class="relative">
-                <label class="text-[10px] font-bold text-[#97BEC6] uppercase block mb-1">Email (Tài khoản đăng nhập)</label>
-                <div class="relative">
-                    <i class="fa-solid fa-envelope absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
-                    <input type="email" id="profileEmail" class="form-input !pl-9 w-full bg-slate-100 text-slate-500 cursor-not-allowed border-slate-200" disabled>
-                </div>
-            </div>
-
-            <div class="grid grid-cols-2 gap-4">
-                <div class="relative">
-                    <label class="text-[10px] font-bold text-[#97BEC6] uppercase block mb-1">Số điện thoại</label>
-                    <div class="relative">
-                        <i class="fa-solid fa-phone absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
-                        <input type="text" id="profilePhone" class="form-input !pl-9 w-full bg-white font-bold text-[#034C5F] border-slate-200 focus:border-[#034C5F]" placeholder="SĐT...">
-                    </div>
-                </div>
-                <div class="relative">
-                    <label class="text-[10px] font-bold text-[#97BEC6] uppercase block mb-1">Ngày sinh nhật</label>
-                    <div class="relative">
-                        <i class="fa-solid fa-cake-candles absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
-                        <input type="date" id="profileDOB" class="form-input !pl-9 w-full bg-white font-bold text-[#034C5F] border-slate-200 focus:border-[#034C5F]">
-                    </div>
-                </div>
-            </div>
-
-            <div class="relative pt-2 border-t border-slate-200 mt-2">
-                <label class="text-[10px] font-bold text-[#EE6457] uppercase block mb-1">Ngày tham gia BNĐ</label>
-                <div class="relative">
-                    <i class="fa-solid fa-star absolute left-3 top-1/2 -translate-y-1/2 text-[#EE6457] text-xs"></i>
-                   <input type="date" id="profileJoinDate" class="form-input !pl-9 w-full bg-white font-bold text-[#034C5F] border-slate-200 focus:border-[#034C5F]">
-               </div>
-            </div>
-
+    <div class="relative">
+        <label class="text-[10px] font-bold text-[#97BEC6] uppercase block mb-1">Họ và Tên</label>
+        <div class="relative">
+            <i class="fa-solid fa-user absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
+            <input type="text" id="profileName" class="form-input !pl-9 w-full bg-white font-bold text-[#034C5F] border-slate-200 focus:border-[#034C5F]" placeholder="Nhập họ tên...">
         </div>
-        
-        <button type="button" onclick="saveUserProfile()" id="btnSaveProfile" class="w-full py-4 mt-6 bg-[#034C5F] text-white rounded-xl font-black uppercase hover:bg-[#023846] hover:shadow-lg hover:-translate-y-0.5 transition-all shadow-md flex items-center justify-center gap-2 text-sm">
-            <i class="fa-solid fa-floppy-disk text-lg"></i> LƯU THAY ĐỔI
-        </button>
+    </div>
+    
+    <div class="relative">
+        <label class="text-[10px] font-bold text-[#97BEC6] uppercase block mb-1">Email (Tài khoản đăng nhập)</label>
+        <div class="relative">
+            <i class="fa-solid fa-envelope absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
+            <input type="email" id="profileEmail" class="form-input !pl-9 w-full bg-slate-100 text-slate-500 cursor-not-allowed border-slate-200" disabled>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-2 gap-4">
+        <div class="relative">
+            <label class="text-[10px] font-bold text-[#97BEC6] uppercase block mb-1">Số điện thoại</label>
+            <div class="relative">
+                <i class="fa-solid fa-phone absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
+                <input type="text" id="profilePhone" class="form-input !pl-9 w-full bg-white font-bold text-[#034C5F] border-slate-200 focus:border-[#034C5F]" placeholder="SĐT...">
+            </div>
+        </div>
+        <div class="relative">
+            <label class="text-[10px] font-bold text-[#97BEC6] uppercase block mb-1">Ngày sinh</label>
+            <div class="relative">
+                <i class="fa-solid fa-cake-candles absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs z-10"></i>
+                <input type="text" id="profileDOB" class="form-input !pl-9 w-full bg-white font-bold text-[#034C5F] border-slate-200 focus:border-[#034C5F] flatpickr-profile" placeholder="Chọn ngày sinh...">
+            </div>
+        </div>
+    </div>
+
+    <div class="relative">
+        <label class="text-[10px] font-bold text-[#97BEC6] uppercase block mb-1">Ngày tham gia hệ thống</label>
+        <div class="relative">
+            <i class="fa-solid fa-star absolute left-3 top-1/2 -translate-y-1/2 text-[#EE6457] text-xs z-10"></i>
+            <input type="text" id="profileJoinDate" class="form-input !pl-9 w-full bg-white font-bold text-[#034C5F] border-slate-200 focus:border-[#034C5F] flatpickr-profile" placeholder="Chọn ngày tham gia...">
+        </div>
     </div>
 </div>
+
+<button type="button" onclick="saveUserProfile()" id="btnSaveProfile" class="w-full py-4 mt-6 bg-[#034C5F] text-white rounded-xl font-black uppercase hover:bg-[#023846] hover:shadow-lg hover:-translate-y-0.5 transition-all shadow-md flex items-center justify-center gap-2 text-sm">
+    <i class="fa-solid fa-floppy-disk text-lg"></i> LƯU THAY ĐỔI
+</button>
 
 </body>
 </html>
