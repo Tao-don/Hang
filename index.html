@@ -624,7 +624,7 @@
             <h3 class="text-xl font-black text-[#034C5F] uppercase tracking-wide flex items-center">
                 <i class="fa-solid fa-address-card mr-2 text-[#EE6457]"></i>Hồ sơ cá nhân
             </h3>
-            <button onclick="closeProfileModal()" class="text-slate-400 hover:text-red-500 transition-colors bg-slate-100 w-8 h-8 rounded-full flex items-center justify-center">
+            <button type="button" onclick="closeProfileModal()" class="text-slate-400 hover:text-red-500 transition-colors bg-slate-100 w-8 h-8 rounded-full flex items-center justify-center">
                 <i class="fa-solid fa-xmark"></i>
             </button>
         </div>
@@ -667,23 +667,22 @@
                 <i class="fa-solid fa-phone absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
                 <input type="text" id="profilePhone" class="form-input !pl-9 w-full bg-white font-bold text-[#034C5F] border-slate-200 focus:border-[#034C5F]" placeholder="SĐT...">
             </div>
-        </div>
         <div class="relative">
-            <label class="text-[10px] font-bold text-[#97BEC6] uppercase block mb-1">Ngày sinh</label>
-            <div class="relative">
-                <i class="fa-solid fa-cake-candles absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs z-10"></i>
-                <input type="text" id="profileDOB" class="form-input !pl-9 w-full bg-white font-bold text-[#034C5F] border-slate-200 focus:border-[#034C5F] flatpickr-profile" placeholder="Chọn ngày sinh...">
-            </div>
-        </div>
-    </div>
-
+    <label class="text-[10px] font-bold text-[#97BEC6] uppercase block mb-1">Ngày sinh</label>
     <div class="relative">
-        <label class="text-[10px] font-bold text-[#97BEC6] uppercase block mb-1">Ngày tham gia hệ thống</label>
-        <div class="relative">
-            <i class="fa-solid fa-star absolute left-3 top-1/2 -translate-y-1/2 text-[#EE6457] text-xs z-10"></i>
-            <input type="text" id="profileJoinDate" class="form-input !pl-9 w-full bg-white font-bold text-[#034C5F] border-slate-200 focus:border-[#034C5F] flatpickr-profile" placeholder="Chọn ngày tham gia...">
-        </div>
+        <i class="fa-solid fa-cake-candles absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs z-10"></i>
+        <input type="date" id="profileDOB" class="form-input !pl-9 w-full bg-white font-bold text-[#034C5F] border-slate-200 focus:border-[#034C5F]">
     </div>
+</div>
+
+<div class="relative">
+    <label class="text-[10px] font-bold text-[#97BEC6] uppercase block mb-1">Ngày tham gia hệ thống</label>
+    <div class="relative">
+        <i class="fa-solid fa-star absolute left-3 top-1/2 -translate-y-1/2 text-[#EE6457] text-xs z-10"></i>
+        <input type="date" id="profileJoinDate" class="form-input !pl-9 w-full bg-white font-bold text-[#034C5F] border-slate-200 focus:border-[#034C5F]">
+    </div>
+</div>
+
 </div>
 
 <button type="button" onclick="saveUserProfile()" id="btnSaveProfile" class="w-full py-4 mt-6 bg-[#034C5F] text-white rounded-xl font-black uppercase hover:bg-[#023846] hover:shadow-lg hover:-translate-y-0.5 transition-all shadow-md flex items-center justify-center gap-2 text-sm">

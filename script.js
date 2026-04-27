@@ -419,28 +419,30 @@ function addProductRow(name = '', price = '', qty = 1) {
     const formattedPrice = price ? new Intl.NumberFormat('en-US').format(price) : '';
 
     const div = document.createElement('div');
-    div.className = "product-row grid grid-cols-12 gap-2 items-center bg-white p-2 rounded-lg border border-slate-100 shadow-sm";
+    // Loại bỏ bg-white, shadow và border. Đổi lại khoảng cách dòng cho thoáng
+    div.className = "product-row grid grid-cols-12 gap-y-2 gap-x-2 items-center py-2 border-b border-slate-100/50 last:border-0";
     
+    // Sử dụng Responsive Grid (Thêm md: để phân biệt ĐT và Máy tính)
     div.innerHTML = `
-        <div class="col-span-6 relative">
+        <div class="col-span-12 md:col-span-5 relative">
             <input type="text" class="form-input text-xs font-bold p-name" placeholder="Tên sản phẩm..." value="${name}">
             <div class="product-suggestions custom-suggestion-box"></div>
         </div>
-        <div class="col-span-3">
+        <div class="col-span-5 md:col-span-3">
             <input type="text" class="form-input text-xs text-center p-price" placeholder="Giá" value="${formattedPrice}" oninput="formatCurrencyInput(this); calculateTotal()">
         </div>
-        <div class="col-span-2 flex shadow-sm rounded-lg">
-            <button type="button" onclick="updateQty(this, -1)" class="w-8 bg-slate-50 border border-slate-200 border-r-0 rounded-l-lg flex justify-center items-center text-slate-500 hover:bg-slate-200 hover:text-[#EE6457] transition-colors focus:outline-none shrink-0">
+        <div class="col-span-5 md:col-span-3 flex shadow-sm rounded-lg">
+            <button type="button" onclick="updateQty(this, -1)" class="w-9 bg-slate-50 border border-slate-200 border-r-0 rounded-l-lg flex justify-center items-center text-slate-500 hover:bg-slate-200 hover:text-[#EE6457] transition-colors focus:outline-none shrink-0">
                 <i class="fa-solid fa-minus text-[10px]"></i>
             </button>
             <input type="number" class="form-input text-xs text-center p-qty !px-0 !rounded-none !shadow-none z-10 w-full [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" value="${qty}" min="1" oninput="calculateTotal()">
-            <button type="button" onclick="updateQty(this, 1)" class="w-8 bg-slate-50 border border-slate-200 border-l-0 rounded-r-lg flex justify-center items-center text-slate-500 hover:bg-slate-200 hover:text-[#034C5F] transition-colors focus:outline-none shrink-0">
+            <button type="button" onclick="updateQty(this, 1)" class="w-9 bg-slate-50 border border-slate-200 border-l-0 rounded-r-lg flex justify-center items-center text-slate-500 hover:bg-slate-200 hover:text-[#034C5F] transition-colors focus:outline-none shrink-0">
                 <i class="fa-solid fa-plus text-[10px]"></i>
             </button>
         </div>
-        <div class="col-span-1 text-right">
-            <button type="button" onclick="this.closest('.product-row').remove(); calculateTotal()" class="text-slate-300 hover:text-red-500">
-                <i class="fa-solid fa-circle-xmark"></i>
+        <div class="col-span-2 md:col-span-1 flex justify-end md:justify-center items-center">
+            <button type="button" onclick="this.closest('.product-row').remove(); calculateTotal()" class="text-slate-300 hover:text-red-500 p-2">
+                <i class="fa-solid fa-circle-xmark text-base"></i>
             </button>
         </div>
     `;
