@@ -4,7 +4,7 @@ import { getDatabase, ref, onValue, set, update, remove, get } from "https://www
 import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, signInWithPopup, GoogleAuthProvider, sendPasswordResetEmail, onAuthStateChanged, signOut, updateProfile } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-auth.js";
 import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-storage.js";
 
-// Cấu hình Firebase v12 mới của bạn
+// Cấu hình Firebase v9 mới của bạn
 const firebaseConfig = {
     apiKey: "AIzaSyDgIdxEtZT8lEhPxzd19fFXEaqBvrVyENw",
     authDomain: "bndshop-a4670.firebaseapp.com",
@@ -1547,31 +1547,20 @@ function openProfileModal() {
     document.getElementById('settingsMenu').classList.add('hidden');
 }
 
-// 1. Khởi tạo Flatpickr khi trang web tải xong
-document.addEventListener('DOMContentLoaded', () => {
-    flatpickr(".datepicker-profile", {
-        locale: "vn",
-        dateFormat: "d/m/Y",
-        allowInput: true,
-        monthSelectorType: 'dropdown',
-        yearSelectorType: 'dropdown',
-        minDate: "1980-01-01",
-        maxDate: "2080-12-31"
-    });
-});
-
-// 2. Hàm Tải dữ liệu người dùng
+// 2. Hàm Tải dữ liệu người dùng (Đã cập nhật cho giao diện mới)
 async function loadUserData(user) {
     if (!user) return;
     
-    // Đổ dữ liệu cơ bản từ Auth
+    // Đổ dữ liệu cơ bản từ Auth ra UI
     document.getElementById('profileEmail').value = user.email || '';
     document.getElementById('profileDisplayName').value = user.displayName || '';
+    document.getElementById('displayProfileName').innerText = user.displayName || 'Chưa cập nhật tên';
+    
     if (user.photoURL) {
         document.getElementById('profileAvatarPreview').src = user.photoURL;
     }
 
-    // Đổ dữ liệu bổ sung từ Realtime Database
+    // Lấy dữ liệu bổ sung từ Realtime Database
     try {
         const userRef = ref(db, `SunsetShopData/Users/${user.uid}`);
         const snapshot = await get(userRef);
@@ -1579,36 +1568,138 @@ async function loadUserData(user) {
             const data = snapshot.val();
             document.getElementById('profilePhone').value = data.phone || '';
             
-            // Cập nhật ngày cho Flatpickr
-            if (data.birthday) document.getElementById('profileBirthday')._flatpickr.setDate(data.birthday);
-            if (data.joinDate) document.getElementById('profileJoinDate')._flatpickr.setDate(data.joinDate);
+            // Cập nhật chức vụ hiển thị
+            const roleText = (data.role === 'admin') ? 'Quản Trị Viên' : 'Nhân Viên';
+            document.getElementById('displayProfileRole').innerText = roleText;
+            
+            // Thay thế khối if(data.birthday) và if(data.joinDate) bằng đoạn này:
+if (data.birthday) {
+    // Chuyển đổi an toàn phòng trường hợp data cũ đang lưu là DD/MM/YYYY
+    document.getElementById('profileBirthday').value = data.birthday.includes('/') 
+        ? data.birthday.split('/').reverse().join('-') 
+        : data.birthday;
+}
+if (data.joinDate) {
+    const formattedJoinDate = data.joinDate.includes('/') 
+        ? data.joinDate.split('/').reverse().join('-') 
+        : data.joinDate;
+    document.getElementById('profileJoinDate').value = formattedJoinDate;
+    calculateWorkDuration(formattedJoinDate);
+}
+
         }
     } catch (error) {
         console.error("Lỗi tải thông tin chi tiết:", error);
     }
 }
 
-// 3. Hàm Xử lý chọn ảnh (Xem trước)
-function handleAvatarSelect(event) {
-    const file = event.target.files[0];
-    if (file) {
-        selectedAvatarFile = file;
-        const reader = new FileReader();
-        reader.onload = (e) => {
-            document.getElementById('profileAvatarPreview').src = e.target.result;
-        };
-        reader.readAsDataURL(file);
+// Hàm tính số ngày làm việc
+// Hàm tính số ngày làm việc
+function calculateWorkDuration(joinDateStr) {
+    if (!joinDateStr || joinDateStr.length < 8) {
+        document.getElementById('displayWorkDuration').innerText = `0 Ngày`;
+        return;
+    }
+    
+    let joinDate;
+    // Xử lý định dạng DD/MM/YYYY hoặc YYYY-MM-DD
+    if(joinDateStr.includes('/')) {
+        const parts = joinDateStr.split('/');
+        if (parts.length === 3 && parts[2].length >= 4) {
+            joinDate = new Date(parts[2], parts[1]-1, parts[0]);
+        } else {
+            return;
+        }
+    } else {
+        joinDate = new Date(joinDateStr);
+    }
+    
+    if(isNaN(joinDate.getTime())) return;
+
+    const now = new Date();
+    const diffTime = now - joinDate;
+    
+    if (diffTime < 0) {
+        document.getElementById('displayWorkDuration').innerText = `0 Ngày`;
+    } else {
+        const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+        document.getElementById('displayWorkDuration').innerText = `${diffDays} Ngày`;
     }
 }
 
-// 4. Hàm Lưu hồ sơ
+
+let cropper = null;
+
+// Xử lý chọn ảnh & Mở modal cắt ảnh
+function handleAvatarSelect(event) {
+    const file = event.target.files[0];
+    if (file) {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            document.getElementById('cropImage').src = e.target.result;
+            const cropModal = document.getElementById('cropModal');
+            cropModal.classList.remove('hidden');
+            
+            setTimeout(() => {
+                cropModal.classList.remove('opacity-0');
+                cropModal.querySelector('div').classList.remove('scale-95');
+                cropModal.querySelector('div').classList.add('scale-100');
+                
+                if (cropper) cropper.destroy();
+                cropper = new Cropper(document.getElementById('cropImage'), {
+                    aspectRatio: 1, // Buộc cắt theo hình vuông (Avatar)
+                    viewMode: 1,
+                    autoCropArea: 1,
+                    dragMode: 'move',
+                    background: false
+                });
+            }, 10);
+        };
+        reader.readAsDataURL(file);
+    }
+    event.target.value = ''; // Reset để chọn lại cùng file nếu cần
+}
+
+// Hủy cắt ảnh
+function cancelCrop() {
+    const cropModal = document.getElementById('cropModal');
+    cropModal.classList.add('opacity-0');
+    cropModal.querySelector('div').classList.remove('scale-100');
+    cropModal.querySelector('div').classList.add('scale-95');
+    setTimeout(() => {
+        cropModal.classList.add('hidden');
+        if (cropper) cropper.destroy();
+    }, 300);
+}
+
+// Xác nhận cắt ảnh
+function confirmCrop() {
+    if (!cropper) return;
+    
+    const btnConfirm = document.querySelector('#cropModal button.bg-\\[\\#EE6457\\]');
+    const originalText = btnConfirm.innerHTML;
+    btnConfirm.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+    
+    cropper.getCroppedCanvas({
+        width: 400,
+        height: 400
+    }).toBlob((blob) => {
+        selectedAvatarFile = blob;
+        document.getElementById('profileAvatarPreview').src = URL.createObjectURL(blob);
+        btnConfirm.innerHTML = originalText;
+        cancelCrop();
+    }, 'image/jpeg', 0.85);
+}
+
+
+// 4. Hàm Lưu hồ sơ (Đã cập nhật đồng bộ UI tức thì)
 async function saveUserProfile() {
     if (!currentUser) return showToast("Vui lòng đăng nhập!");
 
     const btnSave = document.getElementById('btnSaveProfile');
     const originalText = btnSave.innerHTML;
     btnSave.disabled = true;
-    btnSave.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Đang lưu...';
+    btnSave.innerHTML = '<i class="fa-solid fa-spinner fa-spin text-lg"></i> Đang lưu...';
 
     try {
         let photoURL = currentUser.photoURL;
@@ -1628,6 +1719,10 @@ async function saveUserProfile() {
         // Cập nhật Profile Auth
         await updateProfile(currentUser, { displayName, photoURL });
 
+        // Giữ nguyên role cũ, tránh ghi đè quyền admin thành employee
+        const currentRoleText = document.getElementById('displayProfileRole').innerText;
+        const roleSave = (currentRoleText === 'Quản Trị Viên') ? 'admin' : 'employee';
+
         // Cập nhật Database
         await set(ref(db, `SunsetShopData/Users/${currentUser.uid}`), {
             displayName,
@@ -1635,8 +1730,14 @@ async function saveUserProfile() {
             birthday,
             joinDate,
             email: currentUser.email,
+            role: roleSave,
             lastUpdated: new Date().toISOString()
         });
+
+        // ĐỒNG BỘ UI NGAY LẬP TỨC: Cập nhật tên và tính lại ngày ở bảng bên trái
+        document.getElementById('displayProfileName').innerText = displayName || 'Chưa cập nhật tên';
+        if (photoURL) document.getElementById('profileAvatarPreview').src = photoURL;
+        if (joinDate) calculateWorkDuration(joinDate);
 
         showCustomAlert("Hồ sơ của bạn đã được cập nhật thành công!", "success");
         selectedAvatarFile = null;
@@ -1650,15 +1751,13 @@ async function saveUserProfile() {
     }
 }
 
-// 5. Hàm đóng/mở Modal
+// 5. Hàm đóng Modal
 function closeProfileModal() {
     const modal = document.getElementById('profileModal');
     modal.classList.add('opacity-0');
     modal.querySelector('div').classList.replace('scale-100', 'scale-95');
     setTimeout(() => modal.classList.add('hidden'), 300);
 }
-
-
 
 
 // ==============================================================
@@ -1673,5 +1772,5 @@ Object.assign(window, {
     addCVAccumulation, renderCVAccumulations, exportCVToExcel, saveCVMonthlyStat, editCVMonthlyStat, deleteCVMonthlyStat, 
     renderCVMonthlyStats, closeModal, downloadImage, closeExportModal, confirmExport, updateQty, editCVAccumulation, 
     toggleCVCheck, deleteCVAccumulation, copyCustomerInfo,openLoginModal, closeAuthModal, toggleAuthMode, handleAuthAction, handleGoogleLogin, handleSignOut,
-    openProfileModal, closeProfileModal, handleAvatarSelect, saveUserProfile
+    openProfileModal, closeProfileModal, handleAvatarSelect, saveUserProfile, cancelCrop, confirmCrop, calculateWorkDuration
 });
