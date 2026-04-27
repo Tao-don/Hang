@@ -1568,20 +1568,63 @@ async function loadUserData(user) {
         if(data.name) document.getElementById('profileName').value = data.name;
         document.getElementById('profilePhone').value = data.phone || '';
         
-        // --- SỬA LỖI FLATPICKR KHÔNG HIỂN THỊ NGÀY THÁNG ---
-        const dobEl = document.getElementById('profileDOB');
+        // Đã gỡ bỏ Flatpickr gây lỗi. Gán trực tiếp data vào thẻ <input type="date"> chuẩn HTML5
         if (data.dob) {
-            dobEl.value = data.dob;
-            // Ép thư viện flatpickr hiển thị ngày lên giao diện
-            if (dobEl._flatpickr) dobEl._flatpickr.setDate(data.dob);
+            document.getElementById('profileDOB').value = data.dob;
         }
 
-        const joinDateEl = document.getElementById('profileJoinDate');
         const joinDateVal = data.joinDate || getLocalDateString();
-        joinDateEl.value = joinDateVal;
-        if (joinDateEl._flatpickr) joinDateEl._flatpickr.setDate(joinDateVal);
+        document.getElementById('profileJoinDate').value = joinDateVal;
     }
 }
+
+async function saveUserProfile() {
+    if (!currentUser) return;
+    const btnSave = document.getElementById('btnSaveProfile');
+    
+    // Đổi trạng thái nút thành Đang xử lý và khóa không cho bấm 2 lần
+    btnSave.innerHTML = '<i class="fa-solid fa-spinner fa-spin text-lg mr-2"></i>ĐANG LƯU...';
+    btnSave.classList.add('opacity-80', 'pointer-events-none');
+
+    try {
+        const name = document.getElementById('profileName').value.trim();
+        const phone = document.getElementById('profilePhone').value.trim();
+        const dob = document.getElementById('profileDOB').value;
+        const joinDate = document.getElementById('profileJoinDate').value; 
+        
+        let photoURL = currentUser.photoURL || ""; 
+
+        // Upload ảnh lên Firebase Storage nếu có
+        if (selectedAvatarFile) {
+            const avatarRef = storageRef(storage, `Avatars/${currentUser.uid}_${Date.now()}`);
+            await uploadBytes(avatarRef, selectedAvatarFile);
+            photoURL = await getDownloadURL(avatarRef);
+        }
+
+        // Cập nhật Firebase Auth
+        await updateProfile(currentUser, { displayName: name, photoURL: photoURL });
+
+        // Cập nhật Firebase Database
+        await update(ref(db, `SunsetShopData/Users/${currentUser.uid}`), {
+            name: name, 
+            phone: phone, 
+            dob: dob, 
+            joinDate: joinDate,
+            photoURL: photoURL
+        });
+
+        showToast("Đã cập nhật hồ sơ thành công!");
+        closeProfileModal();
+    } catch (error) {
+        console.error("Lỗi khi lưu profile:", error);
+        showCustomAlert("Lỗi cập nhật: " + error.message, "error");
+    } finally {
+        // Nhả nút bấm trở về trạng thái bình thường
+        btnSave.innerHTML = '<i class="fa-solid fa-floppy-disk text-lg"></i> LƯU THAY ĐỔI';
+        btnSave.classList.remove('opacity-80', 'pointer-events-none');
+    }
+}
+
 
 function handleAvatarSelect(event) {
     const file = event.target.files[0];
@@ -1633,15 +1676,6 @@ async function saveUserProfile() {
         btnSave.disabled = false;
     }
 }
-
-flatpickr(".flatpickr-profile", {
-    locale: "vn",
-    dateFormat: "Y-m-d", 
-    altInput: true,
-    altFormat: "d/m/Y",
-    minDate: "1950-01-01", // Thêm dòng này để cho phép chọn năm từ 1950
-    maxDate: "2060-12-31"  // Thêm dòng này
-});
 
 
 // ==============================================================
