@@ -1,0 +1,139 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "User account and profile information",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string" },
+        "displayName": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "phone": { "type": "string" },
+        "birthday": { "type": "string" },
+        "joinDate": { "type": "string" },
+        "role": { "type": "string", "enum": ["admin", "employee"] }
+      },
+      "required": ["email"]
+    },
+    "Order": {
+      "title": "Order",
+      "description": "Sales order information",
+      "type": "object",
+      "properties": {
+        "customerId": { "type": "string" },
+        "customerName": { "type": "string" },
+        "customerPhone": { "type": "string" },
+        "customerAddr": { "type": "string" },
+        "customerType": { "type": "string", "enum": ["new", "ttd"] },
+        "products": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": { "type": "string" },
+              "price": { "type": "number" },
+              "qty": { "type": "number" }
+            }
+          }
+        },
+        "payMethod": { "type": "string" },
+        "shipFee": { "type": "number" },
+        "discount": {
+          "type": "object",
+          "properties": {
+            "val": { "type": "number" },
+            "type": { "type": "string", "enum": ["percent", "amount"] }
+          }
+        },
+        "orderDate": { "type": "string" },
+        "shipDate": { "type": "string" },
+        "deliveryDate": { "type": "string" },
+        "note": { "type": "string" },
+        "subtotal": { "type": "number" },
+        "total": { "type": "number" },
+        "status": { "type": "string" },
+        "isPaid": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "Customer": {
+      "title": "Customer CRM",
+      "description": "Customer information and history",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "phone": { "type": "string" },
+        "address": { "type": "string" },
+        "birthday": { "type": "string" },
+        "anniversary": { "type": "string" },
+        "job": { "type": "string" },
+        "note": { "type": "string" },
+        "status": { "type": "string" },
+        "totalSpent": { "type": "number" },
+        "lastOrderAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "InventoryItem": {
+      "title": "Inventory Item",
+      "description": "Product in stock",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "price": { "type": "number" },
+        "qty": { "type": "number" },
+        "type": { "type": "string", "enum": ["vnl", "external"] },
+        "icon": { "type": "string" }
+      }
+    },
+    "CVAccumulation": {
+      "title": "CV Accumulation",
+      "description": "Accumulated CV entry",
+      "type": "object",
+      "properties": {
+        "date": { "type": "string" },
+        "amount": { "type": "number" },
+        "method": { "type": "string" },
+        "note": { "type": "string" },
+        "checked": { "type": "boolean" }
+      }
+    },
+    "CVMonthlyStat": {
+      "title": "CV Monthly Stat",
+      "description": "Monthly summary of CV and imports",
+      "type": "object",
+      "properties": {
+        "month": { "type": "string" },
+        "cv": { "type": "number" },
+        "importAmt": { "type": "number" },
+        "note": { "type": "string" }
+      }
+    }
+  },
+  "firestore": {
+    "users": {
+      "schema": "User",
+      "description": "User profiles"
+    },
+    "orders": {
+      "schema": "Order",
+      "description": "Sales orders"
+    },
+    "customers": {
+      "schema": "Customer",
+      "description": "CRM customer data"
+    },
+    "inventory": {
+      "schema": "InventoryItem",
+      "description": "Product inventory"
+    },
+    "cv_accumulations": {
+      "schema": "CVAccumulation",
+      "description": "Weekly/daily CV accumulation entries"
+    },
+    "cv_monthly": {
+      "schema": "CVMonthlyStat",
+      "description": "Monthly CV summaries"
+    }
+  }
+}

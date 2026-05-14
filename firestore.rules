@@ -1,0 +1,133 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // 0. Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    match /test/connection {
+      allow read: if false;
+    }
+
+    // --- Helpers ---
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerified() {
+      return isSignedIn();
+    }
+
+    function isEmail(email) {
+      return isSignedIn() && request.auth.token.email == email;
+    }
+
+    function isAdmin() {
+      // Bootstrapped Admins
+      return request.auth != null && (
+        (request.auth.token.email == 'sunsenct89@gmail.com') ||
+        (request.auth.token.email == 'sunrain892@gmail.com') ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')
+      );
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidId(id) {
+       return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    // --- Validation Helpers ---
+
+    function isValidUser(data) {
+      return data.email is string && data.email.size() <= 100 &&
+             (data.get('displayName', '') is string) &&
+             (data.get('role', 'employee') in ['admin', 'employee']);
+    }
+
+    function isValidOrder(data) {
+      return data.customerName is string && data.customerName.size() <= 100 &&
+             data.customerPhone is string && data.customerPhone.size() <= 20 &&
+             data.total is number && data.total >= 0 &&
+             data.status is string &&
+             data.products is list && data.products.size() <= 50;
+    }
+
+    function isValidCustomer(data) {
+      return data.name is string && data.name.size() <= 100 &&
+             data.phone is string && data.phone.size() <= 20;
+    }
+
+    function isValidInventory(data) {
+      return data.name is string && data.name.size() <= 100 &&
+             data.price is number && data.price >= 0 &&
+             data.qty is number;
+    }
+
+    // --- Collections ---
+    match /users/{userId} {
+      allow get: if isSignedIn() && (request.auth.uid == userId || isAdmin());
+      allow list: if isAdmin();
+      allow create: if isSignedIn() && request.auth.uid == userId && isValidUser(incoming());
+      allow update: if isSignedIn() && (request.auth.uid == userId || isAdmin()) && 
+                    isValidUser(incoming()) &&
+                    // Employees cannot escalate their own role
+                    (!isAdmin() ? incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'photoURL', 'coverURL', 'phone', 'birthday', 'joinDate']) : true);
+      allow delete: if isAdmin();
+      
+      // Tenant-specific Subcollections (Employee personal data)
+      match /orders/{orderId} {
+        allow read, write: if isSignedIn() && (request.auth.uid == userId || isAdmin());
+      }
+      match /customers/{phone} {
+        allow read, write: if isSignedIn() && (request.auth.uid == userId || isAdmin());
+      }
+      match /inventory/{itemId} {
+        allow read, write: if isSignedIn() && (request.auth.uid == userId || isAdmin());
+      }
+      match /cv_accumulations/{accId} {
+        allow read, write: if isSignedIn() && (request.auth.uid == userId || isAdmin());
+      }
+      match /cv_monthly/{monthYear} {
+        allow read, write: if isSignedIn() && (request.auth.uid == userId || isAdmin());
+      }
+      match /cv_summary/{summaryId} {
+        allow read, write: if isSignedIn() && (request.auth.uid == userId || isAdmin());
+      }
+    }
+
+    // Root collections are for Admins only (Legacy or global data)
+    match /orders/{orderId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /customers/{phone} {
+      allow read, write: if isAdmin();
+    }
+
+    match /inventory/{itemId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /cv_accumulations/{accId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /cv_monthly/{monthYear} {
+      allow read, write: if isAdmin();
+    }
+    
+    match /cv_summary/{summaryId} {
+      allow read, write: if isAdmin();
+    }
+  }
+}

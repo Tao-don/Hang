@@ -1,0 +1,156 @@
+@import url("https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800;900&family=Inter:wght@400;500;600;700;800;900&display=swap");
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", "Be Vietnam Pro", ui-sans-serif, system-ui, sans-serif;
+
+  --color-deep-teal: #034c5f;
+  --color-light-teal: #97bec6;
+  --color-coral: #ee6457;
+  --color-soft-pink: #f9c4ba;
+  --color-bg-base: #f0f9ff;
+  --color-text-main: #1a1a1a;
+}
+
+@layer base {
+  :root[data-theme="lotus"] {
+    --color-deep-teal: #941b3c;  /* Hoa Sen Pink */
+    --color-light-teal: #d77692; /* Soft Sen Pink */
+    --color-coral: #2a8a5b;     /* Lá Sen Green */
+    --color-soft-pink: #cbe3d0;  /* Soft Leaf Green */
+    --color-bg-base: #fcf5f7;    /* Nước Sen Light Pink bg */
+  }
+
+  :root[data-theme="april30"] {
+    --color-deep-teal: #da251d;  /* Vietnam Flag Red */
+    --color-light-teal: #e88b86; /* Soft Red */
+    --color-coral: #ffcd00;      /* Star Gold */
+    --color-soft-pink: #ffeeb3;  /* Soft Gold */
+    --color-bg-base: #fffaf0;    /* Warm Gold bg */
+  }
+
+  :root[data-theme="classic"] {
+    --color-deep-teal: #172554;  /* Navy Blue */
+    --color-light-teal: #0891b2; /* Blue Green */
+    --color-coral: #ea580c;      /* Orange Red */
+    --color-soft-pink: #fed7aa;  /* Soft Orange */
+    --color-bg-base: #f8fafc;    /* Neutral Slate Base */
+  }
+
+  :root[data-theme="pastel"] {
+    --color-deep-teal: #7885b5;  /* Soft Periwinkle */
+    --color-light-teal: #b8c0e0; /* Lighter Periwinkle */
+    --color-coral: #f3b0c3;      /* Pastel Pink */
+    --color-soft-pink: #fde8ec;  /* Very Light Pink */
+    --color-bg-base: #fcfdfe;    /* Off-white */
+  }
+
+  :root[data-theme="serenity"] {
+    --color-deep-teal: #92AAC7;  /* Bluebell */
+    --color-light-teal: #A1BE95; /* Sages */
+    --color-coral: #ED5752;      /* Raspberry */
+    --color-soft-pink: #E2DFA2;  /* Honeydew */
+    --color-bg-base: #fbfdfa;    /* Serene light background */
+  }
+
+  :root[data-theme="retro"] {
+    --color-deep-teal: #4a3b32;  /* Coffee Brown */
+    --color-light-teal: #9ca3af; /* Neutral Gray */
+    --color-coral: #a8846c;      /* Retro Beige Brown */
+    --color-soft-pink: #eaddd7;  /* Soft Beige */
+    --color-bg-base: #f6f5f3;    /* Neutral off-white */
+  }
+
+  :root[data-theme="bluegreen"] {
+    --color-deep-teal: #021C1E;  /* Blue Black */
+    --color-light-teal: #004445; /* Cadet Blue */
+    --color-coral: #2C7873;      /* Rain */
+    --color-soft-pink: #6FB98F;  /* Greenery */
+    --color-bg-base: #f0f7f4;    /* Light Greenish White */
+  }
+
+  body {
+    @apply bg-bg-base text-text-main font-sans antialiased selection:bg-sky-200/50 transition-colors duration-500;
+  }
+}
+
+@layer components {
+  .theme-card {
+    @apply bg-white p-5 rounded-[28px] shadow-sm border border-sky-100 transition-all duration-300;
+  }
+
+  .glass-card {
+    @apply bg-white/70 backdrop-blur-md rounded-[24px] md:rounded-[32px] p-4 md:p-6 shadow-xl border border-sky-100/50 transition-all duration-300;
+  }
+
+  .glass-modal {
+    @apply bg-white/90 backdrop-blur-2xl border-2 border-sky-50 shadow-2xl rounded-[32px];
+  }
+
+  .theme-input {
+    @apply w-full bg-white border-transparent border-2 rounded-2xl px-4 py-3 text-sm focus:border-transparent focus:ring-0 outline-none transition-all placeholder:text-sky-200/50;
+    background-image:
+      linear-gradient(white, white),
+      linear-gradient(135deg, rgba(3, 76, 95, 0.1), rgba(238, 100, 87, 0.1));
+    background-origin: border-box;
+    background-clip: padding-box, border-box;
+  }
+  .theme-input:focus {
+    background-image:
+      linear-gradient(white, white),
+      linear-gradient(135deg, var(--color-deep-teal), var(--color-coral));
+    background-origin: border-box;
+    background-clip: padding-box, border-box;
+    box-shadow: 0 4px 20px -4px rgba(3, 76, 95, 0.2), 0 4px 20px -4px rgba(238, 100, 87, 0.2);
+  }
+
+  .btn-primary {
+    @apply bg-deep-teal text-white py-4 rounded-2xl font-black text-sm shadow-lg hover:shadow-xl transform active:scale-95 transition-all;
+  }
+
+  .btn-accent {
+    @apply bg-coral text-white py-4 rounded-2xl font-black text-sm shadow-lg hover:shadow-xl transform active:scale-95 transition-all;
+  }
+
+  @media (min-width: 1024px) {
+    .hide-scrollbar {
+      -ms-overflow-style: none;
+      scrollbar-width: none;
+    }
+    .hide-scrollbar::-webkit-scrollbar {
+      display: none;
+    }
+  }
+}
+
+/* Animations */
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(15px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Recharts overrides */
+.recharts-wrapper,
+.recharts-surface,
+.recharts-cartesian-grid, 
+.recharts-tooltip-wrapper,
+.recharts-bar-rectangle {
+  outline: none !important;
+}
+.recharts-wrapper *:focus {
+  outline: none !important;
+}
+
+#toast {
+  @apply fixed bottom-8 left-1/2 -translate-x-1/2 bg-deep-teal text-white px-8 py-4 rounded-[20px] shadow-2xl z-[1000] border border-white/10 font-bold text-xs uppercase tracking-widest transition-all duration-500 opacity-0 pointer-events-none;
+}
